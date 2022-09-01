@@ -16,12 +16,6 @@
 ;; obvious semantics. TOML is designed to map unambiguously to a hash table. TOML
 ;; should be easy to parse into data structures in a wide variety of languages.
 ;;
-
-
-
-
-
-
 ;; 行首
 ;; - 所有的空格都被跳过
 ;; 在字符串外
@@ -44,17 +38,14 @@
             #\return)))
 
 (define (char-dquote? c)
-  (char=? c #\"))
+  (and (char? c) (char=? c #\")))
 
 (define (char-quote? c)
   (char=? c #\'))
 
 
-
 ;; tokenizer
 
-
-(define fp (open-input-file "src/example.toml"))
 
 (define-syntax push!
   (syntax-rules ()
@@ -66,6 +57,11 @@
 (define (consume-spaces fp)
   (do ([char (lookahead-char fp) (lookahead-char fp)])
       ((not (char-space? char)) fp)
+    (get-char fp)))
+
+(define (consume-spaces&newlines fp)
+  (do ([char (lookahead-char fp) (lookahead-char fp)])
+      ((not (or (char-space? char) (char-newline? char))) fp)
     (get-char fp)))
 
 (define (take-newline fp)
@@ -86,24 +82,62 @@
       ((= i n) (rlist->string clist))))
 
 (define (take-string fp)
-  (let ([dquote-n 0])
-    (do ([char (lookahead-char fp) (lookahead-char fp)]
-         [dquote-n 0 (+ dquote-n 1)])
-        ((or (not (char-dquote? char))
-             (= dquote-n 3))
-         (cons 'string
-               (case dquote-n
-                 [1 (take-s-string fp)]
-                 [2 ""]
-                 [3 (take-m-string fp)])))
-      (get-char fp))))
+  (do ([char (lookahead-char fp) (lookahead-char fp)]
+       [dquote-n 0 (+ dquote-n 1)])
+      ((or (not (char-dquote? char))
+           (= dquote-n 3))
+       (cons 'str
+             (case dquote-n
+               [1 (take-s-string fp)]
+               [2 ""]
+               [3 (take-m-string fp)])))
+    (get-char fp)))
 
 (define (take-lstring fp)
   (let ([quote-n 0])
     (do ([char (lookahead-char fp) (lookahead-char fp)]
          [quote-n 0 (+ quote-n 1)])
-        ((or (not (char-quote?))
-             ())))))
+        ((or (not (char-quote? char))
+             (= quote-n 3))
+         (cons 'lstr
+               (case quote-n
+                 [1 (take-s-lstring fp)]
+                 [2 ""]
+                 [3 (take-m-lstring fp)])))
+      (get-char fp))))
+
+(define (take-m-string fp)
+  (let ([char-list '()]
+        [dquote-n 0])
+    (consume-spaces&newlines fp)
+    (do ([char (lookahead-char fp) (lookahead-char fp)])
+        ((and (not (char-dquote? char))
+              (>= dquote-n 3))
+         (rlist->string (cdddr char-list)))
+      (case char
+        [#\\
+         (let ([escape (take-escape fp)])
+           (when escape (push! char-list escape)))]
+        [#\"
+         (set! dquote-n (+ dquote-n 1))
+         (when (>= dquote-n 6)
+           (error #f "token error: too many dquotes"))
+         (push! char-list (get-char fp))]
+        [else
+         (set! dquote-n 0)
+         (push! char-list (get-char fp))]))))
+
+
+(define (take-s-lstring fp)
+  (let ([char-list '()])
+    (do ([char (lookahead-char fp) (lookahead-char fp)])
+        ((char-quote? char)
+         (get-char fp)
+         (rlist->string char-list))
+      (when (char-newline? char)
+        (error #f "token error: newline in single-line literal string"))
+      (push! char-list char)
+      (get-char fp))))
 
 (define (take-s-string fp)
   (let ([char-list '()])
@@ -114,12 +148,10 @@
       (case char
         [(#\newline #\return)
          (error #f "token error: newline in single-line string")]
-        [(#\\)
+        [#\\
          (push! char-list (take-escape fp))]
         [else
-         (push! char-list char)
-         (get-char fp)]))))
-
+         (push! char-list (get-char fp))]))))
 
 (define escape-codes
   '((#\b . #\backspace)
@@ -136,6 +168,7 @@
     (case c
       [#\u (take-unicode fp 4)]
       [#\U (take-unicode fp 8)]
+      [(#\tab #\space #\newline #\return) (consume-spaces&newlines fp) #f]
       [else
        (let ([apair (assv c escape-codes)])
          (if apair
@@ -149,65 +182,3 @@
   (integer->char (string->number (take-chars fp n) 16)))
   
       
-
-(define (next-token fp)
-  (let ([char-list '()]
-        [token-exit #f]
-        [token-type 'n)
-    (do ([char (lookahead-char fp) (lookahead-char fp)])
-        ((or token-exit (eof-object? char))
-         (cons token-type
-               (list->string (reverse char-list))))
-      (get-char)
-
-
-
-(let ([fp (open-input-file "src/example.toml")]
-      [in-str #f]
-      [in-mstr 0]
-      [in-lstr #f]
-      [in-mlstr 0]
-      [in-comment #f]
-      [in-escape #f]
-      [escape-list '()]
-      [token-list '()]
-      [char-list '()])
-
-  (define (add-char! c)
-    (set! char-list (cons c char-list)))
-  
-  (define (add-token! vstr)
-    (set! token-list
-          (cons (cons vstr
-                      (list->string (reverse char-list)))
-                token-list))
-    (set! char-list '()))
-  
-  (do ([char (get-char fp) (get-char fp)])
-      ((eof-object? char) token-list)
-    (cond
-     [in-lstr (case char
-                [(#\newline #\return) (error #f "token error in literal string" char char-list)]
-                [#\'
-                 (set! token-list (cons char-list token-list))
-                 (set! char-list '())
-                 (set! in-lstr #f)]
-                [else (set! char-list (cons char char-list))])]
-     [in-str (case char
-               [(#\newline #\return) (error #f "token error in basic string" char char-list)]
-               [#\\
-                (set! in-escape #t)]
-               [#\"
-                (set! token-list (cons char-list token-list))
-                (set! char-list '())
-                (set! in-str #f)]
-               [else (set! char-list (cons char char-list))])]
-     [in-comment (case char
-                   [#\newline (set! in-comment #f)]     
-                   )))
-    
-    
-
-
-
-    
