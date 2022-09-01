@@ -24,7 +24,6 @@
 ;;
 ;; \return \newline 或 \newline
 
-
 (define (char-space? c)
   (exists (lambda (c-i)
             (char=? c c-i))
@@ -41,15 +40,18 @@
   (and (char? c) (char=? c #\")))
 
 (define (char-quote? c)
-  (char=? c #\'))
-
+  (and (char? c) (char=? c #\')))
 
 ;; tokenizer
-
 
 (define-syntax push!
   (syntax-rules ()
     [(_ rl item) (set! rl (cons item rl))]))
+
+(define-syntax inc!
+  (syntax-rules ()
+    [(_ x) (set! x (+ x 1))]
+    [(_ x a) (set! x (+ x a))]))
 
 (define (rlist->string rlist)
   (list->string (reverse rlist)))
@@ -68,7 +70,7 @@
   (if (or (char=? (get-char fp) #\newline)
           (char=? (get-char fp) #\newline))
       'newline
-      (error #f "token error: invalid newline")))
+      (error #f "Token Error: invalid newline")))
 
 (define (take-comment fp)
   (do ([char (lookahead-char fp) (lookahead-char fp)])
@@ -106,6 +108,27 @@
                  [3 (take-m-lstring fp)])))
       (get-char fp))))
 
+(define (take-m-lstring fp)
+  (let ([char-list '()]
+        [quote-n 0])
+    (consume-spaces&newlines fp)
+    (do ([char (lookahead-char fp) (lookahead-char fp)])
+        ((and (not (char-quote? char))
+              (>= quote-n 3))
+         (rlist->string (cdddr char-list)))
+      (when (and (eof-object? char)
+                 (< quote-n 3))
+        (error #f "Token Error: unpaired quotes"))
+      (case char
+        [#\'
+         (inc! quote-n)
+         (when (>= quote-n 6)
+           (error #f "Token Error: too many quotes"))
+         (push! char-list (get-char fp))]
+        [else
+         (set! quote-n 0)
+         (push! char-list (get-char fp))]))))
+
 (define (take-m-string fp)
   (let ([char-list '()]
         [dquote-n 0])
@@ -114,19 +137,21 @@
         ((and (not (char-dquote? char))
               (>= dquote-n 3))
          (rlist->string (cdddr char-list)))
+      (when (and (eof-object? char)
+                 (< dquote-n 3))
+        (error #f "Token Error: unpaired dquotes"))
       (case char
         [#\\
          (let ([escape (take-escape fp)])
            (when escape (push! char-list escape)))]
         [#\"
-         (set! dquote-n (+ dquote-n 1))
+         (inc! dquote-n)
          (when (>= dquote-n 6)
-           (error #f "token error: too many dquotes"))
+           (error #f "Token Error: too many dquotes"))
          (push! char-list (get-char fp))]
         [else
          (set! dquote-n 0)
          (push! char-list (get-char fp))]))))
-
 
 (define (take-s-lstring fp)
   (let ([char-list '()])
@@ -135,7 +160,7 @@
          (get-char fp)
          (rlist->string char-list))
       (when (char-newline? char)
-        (error #f "token error: newline in single-line literal string"))
+        (error #f "Token Error: newline in single-line literal string"))
       (push! char-list char)
       (get-char fp))))
 
@@ -147,7 +172,7 @@
          (rlist->string char-list))
       (case char
         [(#\newline #\return)
-         (error #f "token error: newline in single-line string")]
+         (error #f "Token Error: newline in single-line string")]
         [#\\
          (push! char-list (take-escape fp))]
         [else
@@ -173,12 +198,10 @@
        (let ([apair (assv c escape-codes)])
          (if apair
              (cdr apair)
-             (error #f "token error: unspecific escape")))])))
+             (error #f "Token Error: unspecific escape")))])))
 
 (define (take-unicode fp n)
   (unless (or (= n 4)
               (= n 8))
-    (error #f "token error: wrong unicode number"))
+    (error #f "Token Error: wrong unicode number"))
   (integer->char (string->number (take-chars fp n) 16)))
-  
-      
