@@ -42,6 +42,21 @@
 (define (char-quote? c)
   (and (char? c) (char=? c #\')))
 
+(define (char-bare? c)
+  (and (char? c)
+       (or (and (char-ci<=? #\z)
+                (char-ci>=? #\a))
+           (char-numeric? c)
+           (char=? #\_)
+           (char=? #\-))))
+
+(define (char-literal? c)
+  (and (char? c)
+       (or (char-bare? c)
+           (char=? #\+)
+           (char=? #\.)
+           (char=? #\:))))
+
 ;; tokenizer
 
 (define-syntax push!
@@ -193,7 +208,9 @@
     (case c
       [#\u (take-unicode fp 4)]
       [#\U (take-unicode fp 8)]
-      [(#\tab #\space #\newline #\return) (consume-spaces&newlines fp) #f]
+      [(#\tab #\space #\newline #\return)
+       (consume-spaces&newlines fp)
+       #f]
       [else
        (let ([apair (assv c escape-codes)])
          (if apair
@@ -205,3 +222,13 @@
               (= n 8))
     (error #f "Token Error: wrong unicode number"))
   (integer->char (string->number (take-chars fp n) 16)))
+
+
+(define (take-literal fp)
+  (let ([char-list '()])
+    (do ([char (lookahead-char fp) (lookahead-char fp)])
+        ((not (char-literal? c))
+         (cons 'literal (rlist->string char-list)))
+      (push! char-list (get-char fp)))))
+
+
