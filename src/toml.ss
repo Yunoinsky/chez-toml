@@ -42,6 +42,12 @@
 (define (char-quote? c)
   (and (char? c) (char=? c #\')))
 
+(define (char-o-sbracket? c)
+  (and (char? c) (char=? c #\[)))
+
+(define (char-c-sbracket? c)
+  (and (char? c) (char=? c #\])))
+
 (define (char-bare? c)
   (and (char? c)
        (or (and (char-ci<=? #\z)
@@ -82,10 +88,11 @@
     (get-char fp)))
 
 (define (take-newline fp)
-  (if (or (char=? (get-char fp) #\newline)
-          (char=? (get-char fp) #\newline))
-      'newline
-      (error #f "Token Error: invalid newline")))
+  (unless (or (char=? (get-char fp) #\newline)
+              (char=? (get-char fp) #\newline))
+    (error #f "Token Error: invalid newline"))
+  (consume-spaces&newlines fp)
+  'newline)
 
 (define (take-comment fp)
   (do ([char (lookahead-char fp) (lookahead-char fp)])
@@ -223,12 +230,31 @@
     (error #f "Token Error: wrong unicode number"))
   (integer->char (string->number (take-chars fp n) 16)))
 
-
 (define (take-literal fp)
   (let ([char-list '()])
     (do ([char (lookahead-char fp) (lookahead-char fp)])
         ((not (char-literal? c))
          (cons 'literal (rlist->string char-list)))
       (push! char-list (get-char fp)))))
+
+(define (take-punctuation fp)
+  (let ([char (get-char fp)])
+    (case char
+      [#\= 'equal]
+      [#\. 'dot]
+      [#\, 'comma]
+      [#\{ 'o-bracket]
+      [#\} 'c-bracket]
+      [#\[ (let ([char (lookahead-char fp)])
+             (if (char-o-sbracket? char)
+                 (begin (get-char fp)
+                        'o-d-sbracket)
+                 'o-sbracket))]
+      [#\] (let ([char (lookahead-char fp)])
+             (if (char-c-sbracket? char)
+                 (begin (get-char fp)
+                        'c-d-sbracket)
+                 'c-sbracket))])))
+
 
 
