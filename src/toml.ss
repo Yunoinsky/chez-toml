@@ -50,8 +50,7 @@
 
 (define (char-bare? c)
   (and (char? c)
-       (or (and (char-ci<=? #\z)
-                (char-ci>=? #\a))
+       (or (char-ci<=? #\a c #\z)
            (char-numeric? c)
            (char=? #\_)
            (char=? #\-))))
@@ -62,6 +61,62 @@
            (char=? #\+)
            (char=? #\.)
            (char=? #\:))))
+
+(define (char-hex? c)
+  (and (char? c)
+       (or (char-numeric? c)
+           (char-ci<=? #\a c #\f))))
+
+(define (char-oct? c)
+  (and (char? c)
+       (char<=? #\0 c #\7)))
+
+(define (char-bin? c)
+  (and (char? c)
+       (or (char=? #\0)
+           (char=? #\1))))
+
+(define (string-integer? str)
+  (let ([i0 0]
+        [char (string-ref str 0)]
+        [not-int #f]
+        [char-integer? char-numeric?]
+        [str-l (string-length str)])
+    (if (or (char=? char #\+)
+            (char=? char #\-))
+        (set! i0 1)
+        (when (char=? #\0 char)
+          (set! i0 2)
+          (case (string-ref str 1)
+            [#\b (set! char-integer? char-bin?)]
+            [#\o (set! char-integer? char-oct?)]
+            [#\x (set! char-integer? char-hex?)]
+            [else (set! i0 1)])))
+    (do ([i i0 (+ i 1)])
+        ((or not-int
+             (= i str-l))
+         (not not-int))
+      (set! char (string-ref str i))
+      (unless (or (char-integer? char)
+                  (and (char=? char #\_)
+                       (< i0 i (- str-l 1))
+                       (char-integer?
+                        (string-ref str (- i 1)))
+                       (char-integer?
+                        (string-ref str (+ i 1)))))
+        (set! not-int #t)))))
+
+(define (string-extract str c)
+  (let ([char-list '()]
+        [str-l (string-length str)])
+    (do ([i 0 (+ i 1)])
+        ((= i str-l)
+         (rlist->string char-list))
+      (let ([char (string-ref str i)])
+        (when (not (char=? char c))
+          (push! char-list char))))))
+
+(define (string->integerx
 
 ;; tokenizer
 
@@ -230,12 +285,16 @@
     (error #f "Token Error: wrong unicode number"))
   (integer->char (string->number (take-chars fp n) 16)))
 
-(define (take-literal fp)
+(define (take-literal-raw fp)
   (let ([char-list '()])
     (do ([char (lookahead-char fp) (lookahead-char fp)])
         ((not (char-literal? c))
          (cons 'literal (rlist->string char-list)))
       (push! char-list (get-char fp)))))
+
+(define (take-literal fp)
+  (let ([literal (take-literal-raw fp)])
+    
 
 (define (take-punctuation fp)
   (let ([char (get-char fp)])
@@ -257,4 +316,7 @@
                  'c-sbracket))])))
 
 
-
+(define (tokenizer fp)
+  (lambda ()
+    (consume-spaces&newlines fp)
+  
