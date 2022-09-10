@@ -25,16 +25,18 @@
 ;; \return \newline 或 \newline
 
 (define (char-space? c)
-  (exists (lambda (c-i)
-            (char=? c c-i))
-          '(#\space
-            #\tab)))
+  (and (char? c)
+       (exists (lambda (c-i)
+                 (char=? c c-i))
+               '(#\space
+                 #\tab))))
 
 (define (char-newline? c)
-  (exists (lambda (c-i)
-            (char=? c c-i))
-          '(#\newline
-            #\return)))
+  (and (char? c)
+       (exists (lambda (c-i)
+                 (char=? c c-i))
+               '(#\newline
+                 #\return))))
 
 (define (char-dquote? c)
   (and (char? c) (char=? c #\")))
@@ -324,26 +326,46 @@
                         'c-d-sbracket)
                  'c-sbracket))])))
 
+(define (take-token fp)
+  (consume-spaces fp)
+  (let ([char (lookahead-char fp)])
+    (case char
+      [#\# (take-comment fp)]
+      [#\" (take-string fp)]
+      [#\' (take-lstring fp)]
+      [(#\return #\newline) (take-newline fp)]
+      [(#\= #\. #\,
+        #\{ #\} #\[ #\]) (take-punctuation fp)]
+      [#!eof 'eof]
+      [else (if (char-literal? char)
+                (take-literal fp)
+                (error #f "Token Error: Unmatched token character" char))])))
+
+
 (define (tokenizer fp)
-  (lambda ()
-    (consume-spaces fp)
-    (let ([char (lookahead-char fp)])
-      (case char
-        [#\# (take-comment fp)]
-        [#\" (take-string fp)]
-        [#\' (take-lstring fp)]
-        [(#\return #\newline) (take-newline fp)]
-        [(#\= #\. #\,
-          #\{ #\} #\[ #\]) (take-punctuation fp)]
-        [#!eof 'eof]
-        [else (if (char-literal? char)
-                  (take-literal fp)
-                  (error #f "Token Error: Unmatched token character" char))]))))
+  (do ([token (take-token fp) (take-token fp)]
+       [last-token '() token]
+       [tokens '()
+               (if (and (eq? token 'newline)
+                        (or (eq? last-token 'newline)
+                            (null? last-token)))
+                   tokens
+                   (cons token
+                         tokens))])
+      ((eq? token 'eof) (reverse tokens))))
+  
 
 
 (define fp (open-input-file "./src/example.toml"))
 (define tk (tokenizer fp))
 
-(tk)
+(tokenizer fp)
+
+(define-syntax switch!
+  (syntax-rules ()
+    [(_ x) (set! x (not x))]))
 
 
+(define (parser fp)
+  (let ([header #t])
+    
