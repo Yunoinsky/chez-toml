@@ -326,7 +326,7 @@
 
 (define (tokenizer fp)
   (lambda ()
-    (consume-spaces&newlines fp)
+    (consume-spaces fp)
     (let ([char (lookahead-char fp)])
       (case char
         [#\# (take-comment fp)]
@@ -340,4 +340,10 @@
                   (take-literal fp)
                   (error #f "Token Error: Unmatched token character" char))]))))
 
-(define tk (tokenizer (open-input-file "./src/example.toml")))
+
+(define fp (open-input-file "./src/example.toml"))
+(define tk (tokenizer fp))
+
+(tk)
+
+
