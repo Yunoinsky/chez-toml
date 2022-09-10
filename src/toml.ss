@@ -52,15 +52,15 @@
   (and (char? c)
        (or (char-ci<=? #\a c #\z)
            (char-numeric? c)
-           (char=? #\_)
-           (char=? #\-))))
+           (char=? #\_ c)
+           (char=? #\- c))))
 
 (define (char-literal? c)
   (and (char? c)
        (or (char-bare? c)
-           (char=? #\+)
-           (char=? #\.)
-           (char=? #\:))))
+           (char=? #\+ c)
+           (char=? #\. c)
+           (char=? #\: c))))
 
 (define (char-hex? c)
   (and (char? c)
@@ -116,7 +116,17 @@
         (when (not (char=? char c))
           (push! char-list char))))))
 
-(define (string->integerx
+(define (string->integer str)
+  (if (char=? (string-ref str 0) #\0)
+      (let* ([str-e (string-extract str #\_)]
+             [str-n (substring str-e 2 (string-length str-e))])
+        (case (string-ref str 1)
+          [#\x (string->number str-n 16)]
+          [#\o (string->number str-n 8)]
+          [#\b (string->number str-n 2)]
+          [else (string->number str-n)]))
+      (string->number str-n)))
+
 
 ;; tokenizer
 
@@ -285,16 +295,15 @@
     (error #f "Token Error: wrong unicode number"))
   (integer->char (string->number (take-chars fp n) 16)))
 
-(define (take-literal-raw fp)
+(define (take-literal fp)
   (let ([char-list '()])
     (do ([char (lookahead-char fp) (lookahead-char fp)])
-        ((not (char-literal? c))
+        ((not (char-literal? char))
          (cons 'literal (rlist->string char-list)))
       (push! char-list (get-char fp)))))
 
-(define (take-literal fp)
-  (let ([literal (take-literal-raw fp)])
-    
+(char-literal? #\")
+(take-literal (open-input-string "This = '32'"))
 
 (define (take-punctuation fp)
   (let ([char (get-char fp)])
@@ -315,8 +324,20 @@
                         'c-d-sbracket)
                  'c-sbracket))])))
 
-
 (define (tokenizer fp)
   (lambda ()
     (consume-spaces&newlines fp)
-  
+    (let ([char (lookahead-char fp)])
+      (case char
+        [#\# (take-comment fp)]
+        [#\" (take-string fp)]
+        [#\' (take-lstring fp)]
+        [(#\return #\newline) (take-newline fp)]
+        [(#\= #\. #\,
+          #\{ #\} #\[ #\]) (take-punctuation fp)]
+        [#!eof 'eof]
+        [else (if (char-literal? char)
+                  (take-literal fp)
+                  (error #f "Token Error: Unmatched token character" char))]))))
+
+(define tk (tokenizer (open-input-file "./src/example.toml")))
