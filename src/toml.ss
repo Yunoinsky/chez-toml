@@ -342,9 +342,40 @@
                 (error #f "Token Error: Unmatched token character" char))])))
 
 
+
+(define-syntax switch!
+  (syntax-rules ()
+    [(_ x) (set! x (not x))]))
+
+
+(define (bracket-update br-stack token)
+  (case token
+    ['o-bracket (cons token br-stack)]
+    ['c-bracket (if (eq? (car br-stack) 'o-bracket)
+                    (cdr br-stack)
+                    (error #f "Token Error: Unmatched bracket"))]
+    ['o-sbracket (cons token br-stack)]
+    ['c-sbracket (if (eq? (car br-stack) 'o-sbracket)
+                     (cdr br-stack)
+                     (error #f "Token Error: Unmatched sbracket"))]
+    [else br-stack]))
+
+
+(define (literal-dot-split literal)
+  (let ([str (cdr literal)])
+
+        
+
 (define (tokenizer fp)
   (do ([token (take-token fp) (take-token fp)]
+       [is-primary-key #t (if is-primary-key
+                              (not (eq? token 'equal))
+                              (and (eq? token 'newline)
+                                   (null? br-stack)))]
        [last-token '() token]
+       [br-stack '() (if is-primary-key
+                         '()
+                         (bracket-update br-stack token))]
        [tokens '()
                (if (and (eq? token 'newline)
                         (or (eq? last-token 'newline)
@@ -357,15 +388,19 @@
 
 
 (define fp (open-input-file "./src/example.toml"))
-(define tk (tokenizer fp))
 
 (tokenizer fp)
 
-(define-syntax switch!
-  (syntax-rules ()
-    [(_ x) (set! x (not x))]))
-
 
 (define (parser fp)
-  (let ([header #t])
-    
+  (let ([key #f])
+    (do ([token-list '() 
+
+
+;; 等号左侧为 key
+;; 双方括号内为 key
+;; newline 后的单方括号内为 key
+;; 等号右侧为 value
+;; 等号右侧的方括号内为 value
+;; 等号右侧换行后，不为 value
+;; 等号右侧逗号后，不为 value
