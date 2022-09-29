@@ -35,3 +35,23 @@ hosts = [
   "alpha",
   "omega"
 ]
+
+gj = { k = 2, m.e=[2,3,4,5],
+       e = 4}
+
+
+[fruits.physical]  # 子表
+color = "red"
+shape = "round"
+
+[[fruits.varieties]]  # 嵌套表数组
+name = "red delicious"
+
+[[fruits.varieties]]
+name = "granny smith"
+
+[[fruits]]
+name = "banana"
+
+[[fruits.varieties]]
+name = "plantain"

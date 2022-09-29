@@ -8,7 +8,6 @@
 ;; Latest tagged version:
 ;; [v1.0.0](https://github.com/toml-lang/toml)
 ;;
-;; Learn a lot from caolan's [chicken-scheme](https://github.com/caolan/chicken-toml) 
 ;;
 ;; Objectives
 ;; ----------
@@ -16,13 +15,7 @@
 ;; obvious semantics. TOML is designed to map unambiguously to a hash table. TOML
 ;; should be easy to parse into data structures in a wide variety of languages.
 ;;
-;; 行首
-;; - 所有的空格都被跳过
-;; 在字符串外
-;; - # 进入注释
-;; 可跨行值
-;;
-;; \return \newline 或 \newline
+
 
 (define (char-space? c)
   (and (char? c)
@@ -86,14 +79,22 @@
         [str-l (string-length str)])
     (if (or (char=? char #\+)
             (char=? char #\-))
-        (set! i0 1)
+        (if (= str-l 1)
+            (set! not-int #t)
+            (if (and (char=? (string-ref str 1) #\0)
+                     (> str-l 2))
+                (set! not-int #t)
+                (set! i0 1)))
         (when (char=? #\0 char)
-          (set! i0 2)
-          (case (string-ref str 1)
-            [#\b (set! char-integer? char-bin?)]
-            [#\o (set! char-integer? char-oct?)]
-            [#\x (set! char-integer? char-hex?)]
-            [else (set! i0 1)])))
+          (if (= str-l 2)
+              (set! not-int #t)
+              (unless (= str-l 1)
+                (set! i0 2)
+                (case (string-ref str 1)
+                  [#\b (set! char-integer? char-bin?)]
+                  [#\o (set! char-integer? char-oct?)]
+                  [#\x (set! char-integer? char-hex?)]
+                  [else (set! not-int #t)])))))
     (do ([i i0 (+ i 1)])
         ((or not-int
              (= i str-l))
@@ -119,16 +120,240 @@
           (push! char-list char))))))
 
 (define (string->integer str)
-  (if (char=? (string-ref str 0) #\0)
-      (let* ([str-e (string-extract str #\_)]
-             [str-n (substring str-e 2 (string-length str-e))])
-        (case (string-ref str 1)
-          [#\x (string->number str-n 16)]
-          [#\o (string->number str-n 8)]
-          [#\b (string->number str-n 2)]
-          [else (string->number str-n)]))
-      (string->number str-n)))
+  (and
+   (string-integer? str)
+   (let ([str-e (string-extract str #\_)])
+     (if (char=? (string-ref str 0) #\0)
+         (let ([str-n (substring str-e
+                                 2 (string-length str-e))])
+           (case (string-ref str 1)
+             [#\x (string->number str-n 16)]
+             [#\o (string->number str-n 8)]
+             [#\b (string->number str-n 2)]
+             [else (string->number str-n)]))
+         (string->number str-e)))))
 
+
+
+(define (string-float? str)
+  (let ([str-l (string-length str)])
+    (define (sign-step i)
+      (if (= i str-l)
+          #f
+          (let ([c (string-ref str i)])
+            (only-number-step (+ i (if (or (char=? c #\+)
+                                           (char=? c #\-))
+                                       1
+                                       0))
+                              'int))))
+    (define (only-number-step i flag)
+      (if (= i str-l)
+          #f
+          (let ([c (string-ref str i)])
+            (if (char-numeric? c)
+                (if (and (char=? c #\0) (eq? flag 'int))
+                    (only-flag-step (+ i 1))
+                    (number-step (+ i 1) flag))
+                #f))))
+    (define (only-flag-step i)
+      (if (= i str-l)
+          #f
+          (let ([c (string-ref str i)])
+            (case c
+              [(#\e #\E) (only-number-step (+ i 1) 'exp)]
+              [#\. (only-number-step (+ i 1) 'float)]
+              [else #f]))))
+    (define (number-step i flag)
+      (if (= i str-l)
+          (if (eq? flag 'int)
+              #f
+              #t)
+          (let ([c (string-ref str i)])
+            (case c
+              [(#\_) (only-number-step (+ i 1) flag)]
+              [(#\e #\E) (if (eq? flag 'exp)
+                             #f
+                             (only-number-step (+ i 1) 'exp))]
+              [#\. (if (eq? flag 'int)
+                       (only-number-step (+ i 1) 'float)
+                       #f)]
+              [else (if (char-numeric? c)
+                        (number-step (+ i 1) flag)
+                        #f)]))))
+    
+    (sign-step 0)))
+
+(define (string->float str)
+  (and
+   (string-float? str)
+   (string->number (string-extract str #\_))))
+
+(define (string->time-list str)
+  (let ([str-l (string-length str)]
+        [h #f]
+        [m #f]
+        [s #f]
+        [ns 0]
+        [i-loc 8]
+        [offset #f])
+    ;; 
+    (define (get-number-from i0)
+      (do ([i (+ i0 1) (+ i 1)])
+          ((or (= str-l i)
+               (not (char-numeric? (string-ref str i))))
+           (if (= i (+ i0 1))
+               #f
+               (cons i
+                     (flonum->fixnum
+                      (* 1000000000
+                        (string->number (substring str
+                                                   i0 i)))))))))
+
+    (define (utc-location c)
+      (and (= str-l (+ 6 i-loc))
+           (char=? #\: (string-ref str (+ 3 i-loc)))
+           (let ([o-h (string->number
+                       (substring str
+                                  (+ 1 i-loc) (+ 3 i-loc)))]
+                 [o-m (string->number
+                       (substring str
+                                  (+ 4 i-loc) (+ 6 i-loc)))])
+             (and o-h o-m
+                  (string-for-each
+                   (lambda (c)
+                     (set! valid-time
+                           (or (char-numeric? c)
+                               (char=? c #\:))))
+                   (substring str
+                              (+ 1 i-loc) (+ 6 i-loc)))
+                  (< o-h 24)
+                  (< o-m 60)
+                  (set! offset (* 60 (+ (* 24 o-h) o-m)))
+                  (list 'time h m
+                        s ns
+                        ((if (char=? #\- c) - +)
+                         offset))))))
+    (if (< str-l 8)
+        #f
+        (and (let ([valid-time #t]
+                   [sub-s (substring str 0 8)])
+               (string-set! sub-s 2 #\0)
+               (string-set! sub-s 5 #\0)
+               (string-for-each (lambda (c)
+                                  (set! valid-time
+                                        (char-numeric? c)))
+                                sub-s)
+               valid-time)
+             (char=? (string-ref str 2) #\:)
+             (char=? (string-ref str 5) #\:)
+             (begin
+               (set! h (string->number (substring str 0 2)))
+               (and h (< h 24)))
+             (begin
+               (set! m (string->number (substring str 3 5)))
+               (and m (< m 60)))
+             (begin
+               (set! s (string->number (substring str 6 8)))
+               (and s (< s 60)))
+             (if (= str-l 8)
+                 (list 'time h m s 0)
+                 (let ([c (string-ref str 8)])
+                   (when (char=? c #\.)
+                     (let ([ns-pair (get-number-from 8)])
+                       (and ns-pair
+                            (set! ns (cdr ns-pair))
+                            (set! i-loc (car ns-pair)))))
+                   (if (= str-l i-loc)
+                       (list 'time h m s ns)
+                       (let ([c (string-ref str i-loc)])
+                         ;; UTC information
+                         (case c
+                           [(#\+ #\-) (utc-location c)]
+                           [#\Z (list 'time h m s ns 0)]
+                           [else #f])))))))))
+
+(define (string->date-list str)
+  (let ([str-l (string-length str)]
+        [year #f]
+        [month #f]
+        [day #f])
+    (and (> str-l 9)
+         (char=? #\-
+                 (string-ref str 4)
+                 (string-ref str 7))
+         (let ([date-s (substring str
+                                  0 10)])
+           (string-set! date-s 4 #\0)
+           (string-set! date-s 7 #\0)
+           (andmap char-numeric?
+                   (string->list date-s)))
+         (set! year (string->number (substring str 0 4)))
+         year
+         (set! month (string->number (substring str 5 7)))
+         month
+         (< 0 month 13)
+         (set! day (string->number (substring str 8 10)))
+         day
+         (< 0 day (case month
+                    [(1 3 5 7 8 10 12) 32]
+                    [2 (if (or (= (mod year 400) 0)
+                               (and (= (mod year 4) 0)
+                                    (not (= (mod year 100) 0))))
+                           30 29)]
+                    [else 31]))
+         (if (= str-l 10)
+             (list 'date year month day)
+             (and (char=? (string-ref str 10)
+                          #\T)
+                  (let ([time (string->time-list (substring str 11 str-l))])
+                    (and time
+                         (append (list 'date-time
+                                       year month day)
+                                 (cdr time)))))))))
+
+(define (time-list->date t)
+  (let ([r-time (reverse (cdr t))]
+        [base-date '(1 1 1970)])
+    (cons 'time
+          (apply make-date
+                 (if (= (length r-time) 5)
+                     (append (cdr r-time)
+                             base-date
+                             (list (car r-time)))
+                     (append r-time
+                             base-date))))))
+
+(define (date-list->date d)
+  (cons 'date
+        (apply make-date
+               (append '(0 0 0 0)
+                       (reverse (cdr d))))))
+
+(define (date-time-list->date dt)
+  (let ([r-date-time (reverse (cdr dt))])
+    (cons 'date-time
+          (apply make-date
+                 (if (= (length r-date-time) 8)
+                     (append (cdr r-date-time)
+                             (list (car r-date-time)))
+                     r-date-time)))))
+
+
+(define (literal-eval literal)
+  (let ([str (cdr literal)])
+    (case str
+      ["true" #t]
+      ["fasle" #f]
+      [("+inf" "inf") +inf.0]
+      ["-inf" -inf.0]
+      [("nan" "+nan" "-nan") +nan.0]
+      [else (or
+             (string->integer str)
+             (string->float str)
+             (string->date-list str)
+             (string->time-list str)
+             (error #f "Token Error: invalid value"))])))
+             
 
 ;; tokenizer
 
@@ -304,8 +529,6 @@
          (cons 'literal (rlist->string char-list)))
       (push! char-list (get-char fp)))))
 
-(char-literal? #\")
-(take-literal (open-input-string "This = '32'"))
 
 (define (take-punctuation fp)
   (let ([char (get-char fp)])
@@ -341,12 +564,9 @@
                 (take-literal fp)
                 (error #f "Token Error: Unmatched token character" char))])))
 
-
-
 (define-syntax switch!
   (syntax-rules ()
     [(_ x) (set! x (not x))]))
-
 
 (define (bracket-update br-stack token)
   (case token
@@ -360,41 +580,29 @@
                      (error #f "Token Error: Unmatched sbracket"))]
     [else br-stack]))
 
-
 (define (literal-dot-split literal)
-  (let ([str (cdr literal)])
-
-        
-
-(define (tokenizer fp)
-  (do ([token (take-token fp) (take-token fp)]
-       [is-primary-key #t (if is-primary-key
-                              (not (eq? token 'equal))
-                              (and (eq? token 'newline)
-                                   (null? br-stack)))]
-       [last-token '() token]
-       [br-stack '() (if is-primary-key
-                         '()
-                         (bracket-update br-stack token))]
-       [tokens '()
-               (if (and (eq? token 'newline)
-                        (or (eq? last-token 'newline)
-                            (null? last-token)))
-                   tokens
-                   (cons token
-                         tokens))])
-      ((eq? token 'eof) (reverse tokens))))
-  
-
-
-(define fp (open-input-file "./src/example.toml"))
-
-(tokenizer fp)
-
-
-(define (parser fp)
-  (let ([key #f])
-    (do ([token-list '() 
+  (let ([str (cdr literal)]
+        [keys '()]
+        [char-list '()])
+    (let ([str-l (string-length str)])
+      (do ([i 0 (+ i 1)])
+          ((= str-l i)
+           (unless (null? char-list)
+             (push! keys
+                    (cons 'str
+                          (rlist->string char-list))))
+           keys)
+        (let ([char (string-ref str i)])
+          (if (eq? char #\.)
+              (begin
+                (push! keys
+                       (cons 'str
+                             (rlist->string char-list)))
+                (push! keys 'dot)
+                (set! char-list '()))
+              (if (char-bare? char)
+                  (push! char-list char)
+                  (error #f "Token Error: Invalid Charset for key"))))))))
 
 
 ;; 等号左侧为 key
@@ -404,3 +612,42 @@
 ;; 等号右侧的方括号内为 value
 ;; 等号右侧换行后，不为 value
 ;; 等号右侧逗号后，不为 value
+
+(define (tokenizer fp)
+  (do ([token (take-token fp) (take-token fp)]
+       [is-primary-key #t (if is-primary-key
+                              (not (eq? token 'equal))
+                              (and (null? br-stack)
+                                   (eq? token 'newline)))]
+       [is-inline-key #f (if is-inline-key
+                             (not (eq? token 'equal))
+                             (or (and (not (null? br-stack))
+                                      (eq? (car br-stack) 'o-bracket)
+                                      (eq? token 'comma))
+                                 (eq? token 'o-bracket)))]
+       [last-token '() token]
+       [br-stack '() (if is-primary-key
+                         '()
+                         (bracket-update br-stack token))]
+       [tokens '()
+               (if (and (eq? token 'newline)
+                        (or (eq? last-token 'newline)
+                            (null? last-token)))
+                   tokens
+                   (if (and (pair? token)
+                            (eq? (car token) 'literal))
+                       (if (or is-primary-key
+                               is-inline-key)
+                           (append (literal-dot-split token)
+                                   tokens)
+                           (cons (literal-eval token)
+                                 tokens))
+                       (cons token
+                             tokens)))])
+      ((eq? token 'eof) (reverse tokens))))
+
+(define fp (open-input-file "./src/example.toml"))
+(tokenizer fp)
+
+(string->float "2.0")
+
