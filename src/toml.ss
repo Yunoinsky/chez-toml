@@ -196,7 +196,6 @@
         [ns 0]
         [i-loc 8]
         [offset #f])
-    ;; 
     (define (get-number-from i0)
       (do ([i (+ i0 1) (+ i 1)])
           ((or (= str-l i)
@@ -246,15 +245,12 @@
                valid-time)
              (char=? (string-ref str 2) #\:)
              (char=? (string-ref str 5) #\:)
-             (begin
-               (set! h (string->number (substring str 0 2)))
-               (and h (< h 24)))
-             (begin
-               (set! m (string->number (substring str 3 5)))
-               (and m (< m 60)))
-             (begin
-               (set! s (string->number (substring str 6 8)))
-               (and s (< s 60)))
+             (set! h (string->number (substring str 0 2)))
+             h (< h 24)
+             (set! m (string->number (substring str 3 5)))
+             m (< m 60)
+             (set! s (string->number (substring str 6 8)))
+             s (< s 60)
              (if (= str-l 8)
                  (list 'time h m s 0)
                  (let ([c (string-ref str 8)])
@@ -311,6 +307,11 @@
                                        year month day)
                                  (cdr time)))))))))
 
+(define (compose-date-time date time)
+  (cons 'date-time
+        (append (cdr date)
+                (cdr time))))
+
 (define (time-list->date t)
   (let ([r-time (reverse (cdr t))]
         [base-date '(1 1 1970)])
@@ -339,6 +340,7 @@
                      r-date-time)))))
 
 
+
 (define (literal-eval literal)
   (let ([str (cdr literal)])
     (case str
@@ -353,13 +355,28 @@
              (string->date-list str)
              (string->time-list str)
              (error #f "Token Error: invalid value"))])))
-             
 
 ;; tokenizer
 
 (define-syntax push!
   (syntax-rules ()
     [(_ rl item) (set! rl (cons item rl))]))
+
+(define-syntax push-cdr!
+  (syntax-rules ()
+    [(_ pair item) (set-cdr! pair (cons item (cdr pair)))]))
+
+
+(define-syntax reverse-cdr!
+  (syntax-rules ()
+    [(_ list-pair)
+     (set-cdr! list-pair (reverse (cdr list-pair)))]))
+
+(define-syntax pop!
+  (syntax-rules ()
+    [(_ rl) (let ([a (car rl)])
+              (set! rl (cdr rl))
+              a)]))
 
 (define-syntax inc!
   (syntax-rules ()
@@ -380,15 +397,19 @@
     (get-char fp)))
 
 (define (take-newline fp)
-  (unless (or (char=? (get-char fp) #\newline)
-              (char=? (get-char fp) #\newline))
+  (unless (let ([c (get-char fp)])
+            (or
+             (eof-object? c)
+             (char=? c #\newline)
+             (char=? (get-char fp) #\newline)))
     (error #f "Token Error: invalid newline"))
   (consume-spaces&newlines fp)
   'newline)
 
 (define (take-comment fp)
   (do ([char (lookahead-char fp) (lookahead-char fp)])
-      ((char-newline? char) (take-newline fp))
+      ((or (char-newline? char) (eof-object? char))
+       (take-newline fp))
     (get-char fp)))
 
 (define (take-chars fp n)
@@ -529,7 +550,6 @@
          (cons 'literal (rlist->string char-list)))
       (push! char-list (get-char fp)))))
 
-
 (define (take-punctuation fp)
   (let ([char (get-char fp)])
     (case char
@@ -591,7 +611,7 @@
              (push! keys
                     (cons 'str
                           (rlist->string char-list))))
-           keys)
+           (reverse keys))
         (let ([char (string-ref str i)])
           (if (eq? char #\.)
               (begin
@@ -602,7 +622,8 @@
                 (set! char-list '()))
               (if (char-bare? char)
                   (push! char-list char)
-                  (error #f "Token Error: Invalid Charset for key"))))))))
+                  (error #f "Token Error: Invalid Charset for Key"))))))))
+
 
 
 ;; 等号左侧为 key
@@ -619,12 +640,14 @@
                               (not (eq? token 'equal))
                               (and (null? br-stack)
                                    (eq? token 'newline)))]
-       [is-inline-key #f (if is-inline-key
-                             (not (eq? token 'equal))
-                             (or (and (not (null? br-stack))
-                                      (eq? (car br-stack) 'o-bracket)
-                                      (eq? token 'comma))
-                                 (eq? token 'o-bracket)))]
+       [is-inline-key
+        #f
+        (if is-inline-key
+            (not (eq? token 'equal))
+            (or (and (not (null? br-stack))
+                     (eq? (car br-stack) 'o-bracket)
+                     (eq? token 'comma))
+                (eq? token 'o-bracket)))]
        [last-token '() token]
        [br-stack '() (if is-primary-key
                          '()
@@ -646,8 +669,160 @@
                              tokens)))])
       ((eq? token 'eof) (reverse tokens))))
 
-(define fp (open-input-file "./src/example.toml"))
-(tokenizer fp)
 
-(string->float "2.0")
+;; (define fp (open-input-file "./src/example.toml"))
+
+(define (parser fp)
+  (let ([tk-buffer '()]
+        [root (cons 'root '())])
+    (define (next)
+      (if (null? tk-buffer)
+          (take-token fp)
+          (pop! tk-buffer)))
+    (define (ref cursor key)
+      (or (assoc key (cdr cursor))
+          (let ([new-pair (cons key '())])
+            (push-cdr! cursor new-pair)
+            new-pair)))
+    (define (parse-newline)
+      (let ([token (next)])
+        (unless (or (eq? token 'newline)
+                    (eq? token 'eof))
+          (error token "Parser Error: need newline"))))
+    (define (parse-line cursor)
+      (let ([token (next)])
+        (case token
+          ['eof 'eof]
+          ['newline (parse-line cursor)]
+          ['o-sbracket (parse-table-head)]
+          ['o-d-sbracket (parse-list-head)]
+          [else
+           (push! tk-buffer token)
+           (parse-pair cursor)
+           (parse-newline)
+           (parse-line cursor)])))
+    (define (parse-pair cursor)
+      (let ([key (parse-key cursor 'pair)])
+        (set-cdr! key
+                  (parse-value))))
+    (define (parse-table-head)
+      (let ([table-stem (parse-key root 'table-head)])
+        (parse-newline)
+        (parse-line table-stem)))
+    (define (parse-list-head)
+      (let* ([list-stem (parse-key root 'list-head)]
+             [ind (length (cdr list-stem))])
+        (parse-newline)
+        (parse-line (ref root ind))))
+   
+    ;; 三种类型的键：pair、table-head、list-head
+    (define (parse-key cursor type)
+      (let ([token (next)])
+        (unless (pair? token)
+          (error token "Parser Error: invalid key"))
+        (case (car token)
+          ['literal
+           (set! tk-buffer
+                 (append (literal-dot-split token)
+                         tk-buffer))
+           (parse-key cursor type)]
+          ['str
+           (parse-key-punc (ref cursor (cdr token)) type)]
+          [else (error token "Parser Error: invalid key")])))
+    (define (parse-key-punc cursor type)
+      (let ([token (next)])
+        (if (eq? token 'dot)
+            (parse-key cursor type)
+            (if (eq? type (case token
+                            ['equal 'pair]
+                            ['c-sbracket 'table-head]
+                            ['c-d-sbracket 'list-head]))
+                cursor
+                (error
+                 token "Parser Error: invalid key punct")))))
+    (define (parse-literal token)
+      (let ([v (literal-eval token)])
+        (when (and (pair? v) (eq? (car v) 'date))
+          (let* ([next-token (next)]
+                 [t
+                  (and (pair? next-token)
+                       (eq? (car next-token) 'literal)
+                       (string->time-list (cdr next-token)))])
+            (if t
+                (set! v (compose-date-time v t))
+                (push! tk-buffer next-token))))
+        v))
+    (define (parse-value)
+      (let ([token (next)])
+        (case token
+          ['o-sbracket (parse-list)]
+          ['o-d-sbracket (push! tk-buffer 'o-sbracket)
+                         (parse-list)]
+          ['o-bracket (parse-table)]
+          ['c-sbracket 'end-list]
+          ['c-d-sbracket (push! tk-buffer 'c-sbracket)
+                         (push! tk-buffer 'c-sbracket)
+                         (parse-value)]
+          [else
+           (unless (pair? token)
+             (error
+              token
+              "Parser Error: invalid value, not pair"))
+           (let ([s (cdr token)])
+             (case (car token)
+               ['str s]
+               ['literal (parse-literal token)]
+               [else
+                token
+                "Parser Error: invalid literal or str"]))])))
+    (define (parse-list)
+      (let ([result '()])
+        (consume-spaces&newlines fp)
+        (let loop ([ind 0])
+          (let ([v (parse-value)])
+            (or
+             (and (eq? v 'end-list)
+                  result)
+             (and (set! result (cons (cons ind v)
+                                     result))
+                  (consume-spaces&newlines fp)
+                  (case (parse-comma)
+                    ['next (begin
+                             (consume-spaces&newlines fp)
+                             (loop (+ ind 1)))]
+                    ['end-list result]
+                    [else
+                     (error
+                      token
+                      "Parse Error: invalid list")])))))))
+    (define (parse-table)
+      (let ([table-stem (cons 'head '())])
+        (or 
+         (let ([token (next)])
+           (if (eq? token 'c-bracket)
+               (cdr table-stem)
+               (begin
+                 (push! tk-buffer token)
+                 #f)))
+         (let loop ()
+           (parse-pair table-stem)
+           (case (parse-comma)
+             ['next (loop)]
+             ['end-table (cdr table-stem)]
+             [else
+              (error token
+                     "Parser Error: invalid table")])))))
+    (define (parse-comma)
+      (let ([token (next)])
+        (case token
+          ['comma 'next]
+          ['c-sbracket 'end-list]
+          ['c-bracket 'end-table]
+          [else
+           (error token "Parser Error: need comma")])))
+    (parse-line root)
+    root))
+
+
+
 
