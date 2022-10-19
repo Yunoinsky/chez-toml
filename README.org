@@ -1,6 +1,7 @@
 #+TITLE: Chez-Toml
+#+AUTHOR: Yunoinsky Chen
 
-* Introduction
+** Introduction
 
 TOML in chez-scheme; v1.0 compliant
 
