@@ -1,20 +1,18 @@
+;; Chez-TOML
+;; =========
+;; Author: Yunoinsky Chen
+;; Description: TOML v1.0.0 parser implemented in Chez Scheme 9.5.8
+;; version: λ-0.1
+;; URL: https://github.com/Yunoinsky/chez-toml
+;; 
 ;; TOML
 ;; ====
-;;
-;; Tom's Obvious, Minimal Language.
+;; Tom's Obvious, Minimal Language, 
 ;;
 ;; By Tom Preston-Werner.
 ;;
 ;; Latest tagged version:
 ;; [v1.0.0](https://github.com/toml-lang/toml)
-;;
-;;
-;; Objectives
-;; ----------
-;; TOML aims to be a minimal configuration file format that's easy to read due to
-;; obvious semantics. TOML is designed to map unambiguously to a hash table. TOML
-;; should be easy to parse into data structures in a wide variety of languages.
-;;
 
 
 (define (char-space? c)
@@ -133,8 +131,6 @@
              [else (string->number str-n)]))
          (string->number str-e)))))
 
-
-
 (define (string-float? str)
   (let ([str-l (string-length str)])
     (define (sign-step i)
@@ -180,7 +176,6 @@
               [else (if (char-numeric? c)
                         (number-step (+ i 1) flag)
                         #f)]))))
-    
     (sign-step 0)))
 
 (define (string->float str)
@@ -207,7 +202,6 @@
                       (* 1000000000
                         (string->number (substring str
                                                    i0 i)))))))))
-
     (define (utc-location c)
       (and (= str-l (+ 6 i-loc))
            (char=? #\: (string-ref str (+ 3 i-loc)))
@@ -338,8 +332,6 @@
                      (append (cdr r-date-time)
                              (list (car r-date-time)))
                      r-date-time)))))
-
-
 
 (define (literal-eval literal)
   (let ([str (cdr literal)])
@@ -623,8 +615,6 @@
               (if (char-bare? char)
                   (push! char-list char)
                   (error #f "Token Error: Invalid Charset for Key"))))))))
-
-
 
 ;; 等号左侧为 key
 ;; 双方括号内为 key
