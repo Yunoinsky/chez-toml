@@ -681,6 +681,10 @@
           (pop! tk-buffer)))
     (define (ref cursor key)
       (or (assoc key (cdr cursor))
+          (and (not (null? (cdr cursor)))
+               (pair? (cadr cursor))
+               (integer? (caadr cursor))
+               (ref (cadr cursor) key))
           (let ([new-pair (cons key '())])
             (push-cdr! cursor new-pair)
             new-pair)))
@@ -713,7 +717,7 @@
       (let* ([list-stem (parse-key root 'list-head)]
              [ind (length (cdr list-stem))])
         (parse-newline)
-        (parse-line (ref root ind))))
+        (parse-line (ref list-stem ind))))
    
     ;; 三种类型的键：pair、table-head、list-head
     (define (parse-key cursor type)
