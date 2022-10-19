@@ -1,4 +1,6 @@
 [[fruits]]
+
+[[fruits]]
 name = "apple"
 
 [fruits.physical]  # subtable

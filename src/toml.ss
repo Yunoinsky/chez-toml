@@ -684,6 +684,7 @@
           (and (not (null? (cdr cursor)))
                (pair? (cadr cursor))
                (integer? (caadr cursor))
+               (not (integer? key))
                (ref (cadr cursor) key))
           (let ([new-pair (cons key '())])
             (push-cdr! cursor new-pair)
