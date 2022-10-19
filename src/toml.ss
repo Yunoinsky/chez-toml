@@ -4,18 +4,10 @@
 ;; Description: TOML v1.0.0 parser implemented in Chez Scheme 9.5.8
 ;; version: λ-0.1
 ;; URL: https://github.com/Yunoinsky/chez-toml
-;; 
-;; TOML
-;; ====
-;; Tom's Obvious, Minimal Language, 
-;;
-;; By Tom Preston-Werner.
-;;
-;; Latest tagged version:
-;; [v1.0.0](https://github.com/toml-lang/toml)
 
 (library (chez-toml (0 1))
-  (export tokenizer parser to-builtin toml-ref toml-set!)
+  (export tokenizer parser to-builtin ht-toml-deep-cells
+          toml-ref toml-set! toml-display)
   (import (chezscheme))
   
   (define (char-space? c)
@@ -849,9 +841,10 @@
          ['date-time date-time-list->date])
        al)]
      [(integer? (caar al))
-      (map (lambda (p)
-             (to-builtin-content (cdr p)))
-             al)]
+      (list->vector
+       (map (lambda (p)
+              (to-builtin-content (cdr p)))
+            al))]
      [else
       (let ([ht (make-eq-hashtable)])
         (map (lambda (p)
@@ -872,9 +865,9 @@
                                    (car path)
                                    '())
                     (cdr path))]
-         [(list? v)
-          (ht-toml-ref (list-ref v
-                              (car path))
+         [(vector? v)
+          (ht-toml-ref (vector-ref v
+                                   (car path))
                     (cdr path))]
          [else
           (error v "Invalid toml hashtable")])))
@@ -908,8 +901,8 @@
         (cond
          [(hashtable? node)
           (hashtable-set! node (car path) v)]
-         [(list? node)
-          (set-car! (list-tail node (car path)) v)]
+         [(vector? node)
+          (vector-set! node (car path) v)]
          [else node "Invalid toml hashtable"])
         (cond
          [(hashtable? node)
@@ -919,9 +912,9 @@
                  (hashtable-set! node (car path) ht)
                  ht))
            (cdr path) v)]
-         [(list? node)
+         [(vector? node)
           (ht-toml-set!
-           (list-ref node (car path))
+           (vector-ref node (car path))
            (cdr path)
            v)]
          [else node "Invalid toml hashtable"])))
@@ -955,13 +948,27 @@
     (cond
      [(hashtable? node) (ht-toml-set! node path v)]
      [(eq? (car node) 'root) (al-toml-set! node path v)]
-     [else (error v "Invalid toml data")])))
+     [else (error v "Invalid toml data")]))
 
-        
-        
-
-    
-    
-          
-         
-
+  (define (ht-toml-deep-cells node)
+    (cond
+     [(hashtable? node)
+      (vector->list
+       (vector-map
+       (lambda (p)
+         (cons (car p)
+               (ht-toml-deep-cells (cdr p))))
+       (hashtable-cells node)))]
+     [(vector? node)
+      (vector-map
+       ht-toml-deep-cells
+       node)]
+     [else node]))
+  
+  (define (toml-display root)
+    (cond
+     [(hashtable? root)
+      (pretty-print (ht-toml-deep-cells root))]
+     [(eq? (car root) 'root)
+      (pretty-print (cdr root))]
+     [else (error root "Invalid toml data")])))
