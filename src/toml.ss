@@ -681,10 +681,10 @@
           (pop! tk-buffer)))
     (define (ref cursor key)
       (or (assoc key (cdr cursor))
-          (and (not (null? (cdr cursor)))
+          (and (not (integer? key))
+               (not (null? (cdr cursor)))
                (pair? (cadr cursor))
                (integer? (caadr cursor))
-               (not (integer? key))
                (ref (cadr cursor) key))
           (let ([new-pair (cons key '())])
             (push-cdr! cursor new-pair)
@@ -827,7 +827,3 @@
            (error token "Parser Error: need comma")])))
     (parse-line root)
     root))
-
-
-
-
