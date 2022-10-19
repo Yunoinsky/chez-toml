@@ -1,0 +1,18 @@
+#+TITLE: Chez-Toml
+
+* Introduction
+
+TOML in chez-scheme; v1.0 compliant
+
+- [X] Compatible with TOML v1.0.0.
+- [X] Reader: parse TOML text stream into scheme association list (reverse order).
+- [X] Prepared interface for builtin hash-table and date object of chez.
+- [ ] Writer (TODO)
+
+
+chez-scheme 实现的 TOML；适配 v1.0 版本
+
+- [X] 完全适配 TOML v1.0.0 版本.
+- [X] 读取器：将 TOML 文本流解析为 scheme 风格的反序关联列表
+- [X] 预备了将关联列表转换为 chez 内置的哈希表对象和日期对象的接口
+- [ ] 写作器 （未完成）
