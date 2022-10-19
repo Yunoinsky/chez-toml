@@ -1,0 +1,12 @@
+name = "apple"
+
+#name = "red delicious"
+
+#[[fruits.varieties]]
+#name = "granny smith"
+
+[fruits.k]
+name = "banana"
+
+#[[fruits.varieties]]
+#name = "plantain"

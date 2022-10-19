@@ -36,9 +36,10 @@ hosts = [
   "omega"
 ]
 
-gj = { k = 2, m.e=[2,3,4,5],
-       e = 4}
+gj = { k = 2, m.e=[2,3,4,5], e = 4}
 
+[[fruits]]
+name = "apple"
 
 [fruits.physical]  # 子表
 color = "red"
