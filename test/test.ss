@@ -7,11 +7,11 @@
 
 (display "\nParser:\n")
 (define fp (open-input-file "./test/example.toml"))
-(pretty-print (parser fp))
+(pretty-print (toml-load fp))
 
 (define fp (open-input-file "./test/example.toml"))
 
-(define tree (parser fp))
+(define tree (toml-load fp))
 (define ht (to-builtin tree))
 
 (display "\nAssoc list ref test:\n")
