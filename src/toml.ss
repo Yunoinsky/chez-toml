@@ -6,9 +6,265 @@
 ;; URL: https://github.com/Yunoinsky/chez-toml
 
 (library (chez-toml (0 1))
-  (export tokenizer parser to-builtin ht-toml-deep-cells
-          toml-ref toml-set! toml-display)
+  (export parser tokenizer to-builtin
+          toml-ref toml-set!
+          ht-toml-deep-cells toml-display)
   (import (chezscheme))
+
+  (define-syntax push!
+    (syntax-rules ()
+      [(_ rl item) (set! rl (cons item rl))]))
+
+  (define-syntax push-cdr!
+    (syntax-rules ()
+      [(_ pair item) (set-cdr! pair (cons item (cdr pair)))]))
+
+  (define-syntax reverse-cdr!
+    (syntax-rules ()
+      [(_ list-pair)
+       (set-cdr! list-pair (reverse (cdr list-pair)))]))
+
+  (define-syntax pop!
+    (syntax-rules ()
+      [(_ rl) (let ([a (car rl)])
+                (set! rl (cdr rl))
+                a)]))
+
+  (define-syntax inc!
+    (syntax-rules ()
+      [(_ x) (set! x (+ x 1))]
+      [(_ x a) (set! x (+ x a))]))
+
+  (define (parser fp)
+    (let ([tk-buffer '()]
+          [root (cons 'root '())])
+      (define (next)
+        (if (null? tk-buffer)
+            (take-token fp)
+            (pop! tk-buffer)))
+      (define (ref cursor key)
+        (or (assoc key (cdr cursor))
+            (and (not (integer? key))
+                 (not (null? (cdr cursor)))
+                 (pair? (cadr cursor))
+                 (integer? (caadr cursor))
+                 (ref (cadr cursor) key))
+            (let ([new-pair (cons key '())])
+              (push-cdr! cursor new-pair)
+              new-pair)))
+      (define (parse-newline)
+        (let ([token (next)])
+          (unless (or (eq? token 'newline)
+                      (eq? token 'eof))
+            (error token "Parser Error: need newline"))))
+      (define (parse-line cursor)
+        (let ([token (next)])
+          (case token
+            ['eof 'eof]
+            ['newline (parse-line cursor)]
+            ['o-sbracket (parse-table-head)]
+            ['o-d-sbracket (parse-list-head)]
+            [else
+             (push! tk-buffer token)
+             (parse-pair cursor)
+             (parse-newline)
+             (parse-line cursor)])))
+      (define (parse-pair cursor)
+        (let ([key (parse-key cursor 'pair)])
+          (set-cdr! key
+                    (parse-value))))
+      (define (parse-table-head)
+        (let ([table-stem (parse-key root 'table-head)])
+          (parse-newline)
+          (parse-line table-stem)))
+      (define (parse-list-head)
+        (let* ([list-stem (parse-key root 'list-head)]
+               [ind (length (cdr list-stem))])
+          (parse-newline)
+          (parse-line (ref list-stem ind))))
+      (define (parse-key cursor type #;'(pair table-head list-head))
+        (let ([token (next)])
+          (unless (pair? token)
+            (error token "Parser Error: invalid key"))
+          (case (car token)
+            ['literal
+             (set! tk-buffer
+                   (append (literal-dot-split token)
+                           tk-buffer))
+             (parse-key cursor type)]
+            ['str
+             (parse-key-punc (ref cursor (cdr token)) type)]
+            [else (error token "Parser Error: invalid key")])))
+      (define (parse-key-punc cursor type)
+        (let ([token (next)])
+          (if (eq? token 'dot)
+              (parse-key cursor type)
+              (if (eq? type (case token
+                              ['equal 'pair]
+                              ['c-sbracket 'table-head]
+                              ['c-d-sbracket 'list-head]))
+                  cursor
+                  (error
+                   token "Parser Error: invalid key punct")))))
+      (define (parse-literal token)
+        (let ([v (literal-eval token)])
+          (when (and (pair? v) (eq? (car v) 'date))
+            (let* ([next-token (next)]
+                   [t
+                    (and (pair? next-token)
+                         (eq? (car next-token) 'literal)
+                         (string->time-list (cdr next-token)))])
+              (if t
+                  (set! v (compose-date-time v t))
+                  (push! tk-buffer next-token))))
+          v))
+      (define (parse-value)
+        (let ([token (next)])
+          (case token
+            ['o-sbracket (parse-list)]
+            ['o-d-sbracket (push! tk-buffer 'o-sbracket)
+                           (parse-list)]
+            ['o-bracket (parse-table)]
+            ['c-sbracket 'end-list]
+            ['c-d-sbracket (push! tk-buffer 'c-sbracket)
+                           (push! tk-buffer 'c-sbracket)
+                           (parse-value)]
+            [else
+             (unless (pair? token)
+               (error
+                token
+                "Parser Error: invalid value, not pair"))
+             (let ([s (cdr token)])
+               (case (car token)
+                 ['str s]
+                 ['literal (parse-literal token)]
+                 [else
+                  token
+                  "Parser Error: invalid literal or str"]))])))
+      (define (parse-list)
+        (let ([result '()])
+          (consume-spaces&newlines fp)
+          (let loop ([ind 0])
+            (let ([v (parse-value)])
+              (or
+               (and (eq? v 'end-list)
+                    result)
+               (and (set! result (cons (cons ind v)
+                                       result))
+                    (consume-spaces&newlines fp)
+                    (case (parse-comma)
+                      ['next (begin
+                               (consume-spaces&newlines fp)
+                               (loop (+ ind 1)))]
+                      ['end-list result]
+                      [else
+                       (error
+                        #f
+                        "Parse Error: invalid list")])))))))
+      (define (parse-table)
+        (let ([table-stem (cons 'head '())])
+          (or 
+           (let ([token (next)])
+             (if (eq? token 'c-bracket)
+                 (cdr table-stem)
+                 (begin
+                   (push! tk-buffer token)
+                   #f)))
+           (let loop ()
+             (parse-pair table-stem)
+             (case (parse-comma)
+               ['next (loop)]
+               ['end-table (cdr table-stem)]
+               [else
+                (error #f
+                       "Parser Error: invalid table")])))))
+      (define (parse-comma)
+        (let ([token (next)])
+          (case token
+            ['comma 'next]
+            ['c-sbracket 'end-list]
+            ['c-bracket 'end-table]
+            [else
+             (error token "Parser Error: need comma")])))
+      (parse-line root)
+      (deep-reverse root)))
+  
+  (define (tokenizer fp)
+    (do ([token (take-token fp) (take-token fp)]
+         [is-primary-key #t (if is-primary-key
+                                (not (eq? token 'equal))
+                                (and (null? br-stack)
+                                     (eq? token 'newline)))]
+         [is-inline-key
+          #f
+          (if is-inline-key
+              (not (eq? token 'equal))
+              (or (and (not (null? br-stack))
+                       (eq? (car br-stack) 'o-bracket)
+                       (eq? token 'comma))
+                  (eq? token 'o-bracket)))]
+         [last-token '() token]
+         [br-stack '() (if is-primary-key
+                           '()
+                           (bracket-update br-stack token))]
+         [tokens '()
+                 (if (and (eq? token 'newline)
+                          (or (eq? last-token 'newline)
+                              (null? last-token)))
+                     tokens
+                     (if (and (pair? token)
+                              (eq? (car token) 'literal))
+                         (if (or is-primary-key
+                                 is-inline-key)
+                             (append (literal-dot-split token)
+                                     tokens)
+                             (cons (literal-eval token)
+                                   tokens))
+                         (cons token
+                               tokens)))])
+        ((eq? token 'eof) (reverse tokens))))
+
+  (define (to-builtin root)
+    (to-builtin-content (cdr root)))
+
+  (define (toml-ref v path)
+    (when (symbol? path)
+      (set! path (cons path '())))
+    (cond
+     [(hashtable? v) (ht-toml-ref v path)]
+     [(eq? (car v) 'root) (al-toml-ref (cdr v) path)]
+     [else (error v "Invalid toml data")]))
+
+  (define (toml-set! node path v)
+    (when (symbol? path)
+      (set! path (cons path '())))
+    (cond
+     [(hashtable? node) (ht-toml-set! node path v)]
+     [(eq? (car node) 'root) (al-toml-set! node path v)]
+     [else (error v "Invalid toml data")]))
+
+  (define (ht-toml-deep-cells node)
+    (cond
+     [(hashtable? node)
+      (vector->list
+       (vector-map
+       (lambda (p)
+         (cons (car p)
+               (ht-toml-deep-cells (cdr p))))
+       (hashtable-cells node)))]
+     [(vector? node)
+      (vector-map
+       ht-toml-deep-cells
+       node)]
+     [else node]))
+
+  (define (toml-display root)
+    (cond
+     [(hashtable? root)
+      (pretty-print (ht-toml-deep-cells root))]
+     [(eq? (car root) 'root)
+      (pretty-print (cdr root))]
+     [else (error root "Invalid toml data")]))  
   
   (define (char-space? c)
     (and (char? c)
@@ -347,32 +603,6 @@
                (string->time-list str)
                (error #f "Token Error: invalid value"))])))
 
-  ;; tokenizer
-
-  (define-syntax push!
-    (syntax-rules ()
-      [(_ rl item) (set! rl (cons item rl))]))
-
-  (define-syntax push-cdr!
-    (syntax-rules ()
-      [(_ pair item) (set-cdr! pair (cons item (cdr pair)))]))
-
-  (define-syntax reverse-cdr!
-    (syntax-rules ()
-      [(_ list-pair)
-       (set-cdr! list-pair (reverse (cdr list-pair)))]))
-
-  (define-syntax pop!
-    (syntax-rules ()
-      [(_ rl) (let ([a (car rl)])
-                (set! rl (cdr rl))
-                a)]))
-
-  (define-syntax inc!
-    (syntax-rules ()
-      [(_ x) (set! x (+ x 1))]
-      [(_ x a) (set! x (+ x a))]))
-
   (define (rlist->string rlist)
     (list->string (reverse rlist)))
 
@@ -617,41 +847,7 @@
                     (push! char-list char)
                     (error #f "Token Error: Invalid Charset for Key"))))))))
 
-  (define (tokenizer fp)
-    (do ([token (take-token fp) (take-token fp)]
-         [is-primary-key #t (if is-primary-key
-                                (not (eq? token 'equal))
-                                (and (null? br-stack)
-                                     (eq? token 'newline)))]
-         [is-inline-key
-          #f
-          (if is-inline-key
-              (not (eq? token 'equal))
-              (or (and (not (null? br-stack))
-                       (eq? (car br-stack) 'o-bracket)
-                       (eq? token 'comma))
-                  (eq? token 'o-bracket)))]
-         [last-token '() token]
-         [br-stack '() (if is-primary-key
-                           '()
-                           (bracket-update br-stack token))]
-         [tokens '()
-                 (if (and (eq? token 'newline)
-                          (or (eq? last-token 'newline)
-                              (null? last-token)))
-                     tokens
-                     (if (and (pair? token)
-                              (eq? (car token) 'literal))
-                         (if (or is-primary-key
-                                 is-inline-key)
-                             (append (literal-dot-split token)
-                                     tokens)
-                             (cons (literal-eval token)
-                                   tokens))
-                         (cons token
-                               tokens)))])
-        ((eq? token 'eof) (reverse tokens))))
-
+  
   (define (atom-node? node)
     (or (not (pair? (cdr node)))
         (symbol? (cadr node))))
@@ -671,165 +867,6 @@
                        (deep-reverse new-node)))
                  new))))))
   
-  (define (parser fp)
-    (let ([tk-buffer '()]
-          [root (cons 'root '())])
-      (define (next)
-        (if (null? tk-buffer)
-            (take-token fp)
-            (pop! tk-buffer)))
-      (define (ref cursor key)
-        (or (assoc key (cdr cursor))
-            (and (not (integer? key))
-                 (not (null? (cdr cursor)))
-                 (pair? (cadr cursor))
-                 (integer? (caadr cursor))
-                 (ref (cadr cursor) key))
-            (let ([new-pair (cons key '())])
-              (push-cdr! cursor new-pair)
-              new-pair)))
-      (define (parse-newline)
-        (let ([token (next)])
-          (unless (or (eq? token 'newline)
-                      (eq? token 'eof))
-            (error token "Parser Error: need newline"))))
-      (define (parse-line cursor)
-        (let ([token (next)])
-          (case token
-            ['eof 'eof]
-            ['newline (parse-line cursor)]
-            ['o-sbracket (parse-table-head)]
-            ['o-d-sbracket (parse-list-head)]
-            [else
-             (push! tk-buffer token)
-             (parse-pair cursor)
-             (parse-newline)
-             (parse-line cursor)])))
-      (define (parse-pair cursor)
-        (let ([key (parse-key cursor 'pair)])
-          (set-cdr! key
-                    (parse-value))))
-      (define (parse-table-head)
-        (let ([table-stem (parse-key root 'table-head)])
-          (parse-newline)
-          (parse-line table-stem)))
-      (define (parse-list-head)
-        (let* ([list-stem (parse-key root 'list-head)]
-               [ind (length (cdr list-stem))])
-          (parse-newline)
-          (parse-line (ref list-stem ind))))
-      
-      ;; 三种类型的键：pair、table-head、list-head
-      (define (parse-key cursor type)
-        (let ([token (next)])
-          (unless (pair? token)
-            (error token "Parser Error: invalid key"))
-          (case (car token)
-            ['literal
-             (set! tk-buffer
-                   (append (literal-dot-split token)
-                           tk-buffer))
-             (parse-key cursor type)]
-            ['str
-             (parse-key-punc (ref cursor (cdr token)) type)]
-            [else (error token "Parser Error: invalid key")])))
-      (define (parse-key-punc cursor type)
-        (let ([token (next)])
-          (if (eq? token 'dot)
-              (parse-key cursor type)
-              (if (eq? type (case token
-                              ['equal 'pair]
-                              ['c-sbracket 'table-head]
-                              ['c-d-sbracket 'list-head]))
-                  cursor
-                  (error
-                   token "Parser Error: invalid key punct")))))
-      (define (parse-literal token)
-        (let ([v (literal-eval token)])
-          (when (and (pair? v) (eq? (car v) 'date))
-            (let* ([next-token (next)]
-                   [t
-                    (and (pair? next-token)
-                         (eq? (car next-token) 'literal)
-                         (string->time-list (cdr next-token)))])
-              (if t
-                  (set! v (compose-date-time v t))
-                  (push! tk-buffer next-token))))
-          v))
-      (define (parse-value)
-        (let ([token (next)])
-          (case token
-            ['o-sbracket (parse-list)]
-            ['o-d-sbracket (push! tk-buffer 'o-sbracket)
-                           (parse-list)]
-            ['o-bracket (parse-table)]
-            ['c-sbracket 'end-list]
-            ['c-d-sbracket (push! tk-buffer 'c-sbracket)
-                           (push! tk-buffer 'c-sbracket)
-                           (parse-value)]
-            [else
-             (unless (pair? token)
-               (error
-                token
-                "Parser Error: invalid value, not pair"))
-             (let ([s (cdr token)])
-               (case (car token)
-                 ['str s]
-                 ['literal (parse-literal token)]
-                 [else
-                  token
-                  "Parser Error: invalid literal or str"]))])))
-      (define (parse-list)
-        (let ([result '()])
-          (consume-spaces&newlines fp)
-          (let loop ([ind 0])
-            (let ([v (parse-value)])
-              (or
-               (and (eq? v 'end-list)
-                    result)
-               (and (set! result (cons (cons ind v)
-                                       result))
-                    (consume-spaces&newlines fp)
-                    (case (parse-comma)
-                      ['next (begin
-                               (consume-spaces&newlines fp)
-                               (loop (+ ind 1)))]
-                      ['end-list result]
-                      [else
-                       (error
-                        #f
-                        "Parse Error: invalid list")])))))))
-      (define (parse-table)
-        (let ([table-stem (cons 'head '())])
-          (or 
-           (let ([token (next)])
-             (if (eq? token 'c-bracket)
-                 (cdr table-stem)
-                 (begin
-                   (push! tk-buffer token)
-                   #f)))
-           (let loop ()
-             (parse-pair table-stem)
-             (case (parse-comma)
-               ['next (loop)]
-               ['end-table (cdr table-stem)]
-               [else
-                (error #f
-                       "Parser Error: invalid table")])))))
-      (define (parse-comma)
-        (let ([token (next)])
-          (case token
-            ['comma 'next]
-            ['c-sbracket 'end-list]
-            ['c-bracket 'end-table]
-            [else
-             (error token "Parser Error: need comma")])))
-      (parse-line root)
-      (deep-reverse root)))
-
-  (define (to-builtin root)
-    (to-builtin-content (cdr root)))
-     
   (define (to-builtin-content al)
     (cond
      [(null? al) (make-eq-hashtable)]
@@ -888,14 +925,6 @@
          [else
           (error v "Invalid toml assoc list")])))
 
-  (define (toml-ref v path)
-    (when (symbol? path)
-      (set! path (cons path '())))
-    (cond
-     [(hashtable? v) (ht-toml-ref v path)]
-     [(eq? (car v) 'root) (al-toml-ref (cdr v) path)]
-     [else (error v "Invalid toml data")]))
-
   (define (ht-toml-set! node path v)
     (if (null? (cdr path))
         (cond
@@ -941,34 +970,4 @@
                      cursor
                      new-cursor)
                     (al-toml-set! new-cursor (cdr path) v)))))))
-
-  (define (toml-set! node path v)
-    (when (symbol? path)
-      (set! path (cons path '())))
-    (cond
-     [(hashtable? node) (ht-toml-set! node path v)]
-     [(eq? (car node) 'root) (al-toml-set! node path v)]
-     [else (error v "Invalid toml data")]))
-
-  (define (ht-toml-deep-cells node)
-    (cond
-     [(hashtable? node)
-      (vector->list
-       (vector-map
-       (lambda (p)
-         (cons (car p)
-               (ht-toml-deep-cells (cdr p))))
-       (hashtable-cells node)))]
-     [(vector? node)
-      (vector-map
-       ht-toml-deep-cells
-       node)]
-     [else node]))
-  
-  (define (toml-display root)
-    (cond
-     [(hashtable? root)
-      (pretty-print (ht-toml-deep-cells root))]
-     [(eq? (car root) 'root)
-      (pretty-print (cdr root))]
-     [else (error root "Invalid toml data")])))
+  )
