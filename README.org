@@ -7,16 +7,16 @@
 TOML in chez-scheme; v1.0 compliant
 
 - [X] Compatible with TOML v1.0.0.
-- [X] Reader: parse TOML text stream into scheme association list (reverse order).
+- [X] Reader: parse TOML text stream into scheme association list.
 - [X] Convert association list to chez builtin object (hash-table, vector and date)
 - [X] Useful API for reference, set and display
-- [ ] Writer (TODO)
+- [X] Writer: parse toml-data in hashtable or alist form into TOML text stream.
 
 
 chez-scheme 实现的 TOML；适配 v1.0 版本
 
 - [X] 完全适配 TOML v1.0.0 版本.
-- [X] 读取器：将 TOML 文本流解析为 scheme 风格的反序关联列表
+- [X] 读取器：将 TOML 文本流解析为 scheme 风格的关联列表
 - [X] 预备了将关联列表转换为 chez 内置的哈希表对象和日期对象的接口
 - [X] 易用的索引、赋值、打印接口
-- [ ] 写作器 （未完成）
+- [X] 写作器：哈希表对象格式或关联列表格式的 TOML 数据解析为 TOML 文本流
