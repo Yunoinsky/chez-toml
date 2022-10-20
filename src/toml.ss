@@ -8,7 +8,8 @@
 (library (chez-toml (0 1))
   (export parser tokenizer to-builtin
           toml-ref toml-set!
-          ht-toml-deep-cells toml-display)
+          ht-toml-deep-cells toml-display
+          toml-dump)
   (import (chezscheme))
 
   (define-syntax push!
@@ -264,7 +265,14 @@
       (pretty-print (ht-toml-deep-cells root))]
      [(eq? (car root) 'root)
       (pretty-print (cdr root))]
-     [else (error root "Invalid toml data")]))  
+     [else (error root "Invalid toml data")]))
+
+  (define (toml-dump root fp)
+    ((cond
+      [(hashtable? root) ht-toml-dump]
+      [(eq? (car root) 'root) al-toml-dump]
+      [else (error root "Writer Error: invalid toml data")])
+     root fp))
   
   (define (char-space? c)
     (and (char? c)
@@ -434,6 +442,83 @@
      (string-float? str)
      (string->number (string-extract str #\_))))
 
+  (define (second->utc-str s)
+    (if (= s 0)
+        "Z"
+        (let-values
+            ([(sign) (if (< s 0)
+                         '-
+                         '+)]
+             [(h m) (div-and-mod (abs (/ s 60)) 60)])
+          (format "~a~2,,,'0@s:~2,,,'0@s" sign h m))))
+
+  
+  (define (dt-l->dt-str dt-l)
+    (let ([dt (cdr dt-l)]
+          [affix (car dt-l)])
+      (if (date? dt)
+          (case affix
+            ['date
+             (format "~4,,,'0@s-~2,,,'0@s-~2,,,'0@s"
+                     (date-year dt)
+                     (date-month dt)
+                     (date-day dt))]
+            ['time
+             (string-append
+              (format "~2,,,'0@s:~2,,,'0@s:~2,,,'0@s"
+                      (date-hour dt)
+                      (date-minute dt)
+                      (date-second dt))
+              (let ([ns (date-nanosecond dt)])
+                (if (= 0 ns)
+                    ""
+                    (let ([ns-str
+                           (format "~f"
+                                   (/ ns 10e9))])
+                      (substring ns-str
+                                 1
+                                 (string-length ns-str)))))
+              (if (date-zone-name dt)
+                  ""
+                  (second->utc-str (date-zone-offset dt))))]
+            ['date-time
+             (string-append
+              (dt-l->dt-str (cons 'date dt))
+              "T"
+              (dt-l->dt-str (cons 'time dt)))])
+        (case affix
+          ['date
+           (apply format
+                  (cons
+                   "~4,,,'0@s-~2,,,'0@s-~2,,,'0@s"
+                   (cdr dt-l)))]
+          ['time
+           (string-append
+            (apply format
+                   (cons
+                    "~2,,,'0@s:~2,,,'0@s:~2,,,'0@s"
+                    (list-head (cdr dt-l) 3)))
+            (let ([ns-l (cddddr dt-l)])
+              (if (or (null? ns-l)
+                      (= 0 (car ns-l)))
+                  ""
+                  (let ([ns-str (format "~f"
+                                        (/ (car ns-l) 10e9))])
+                    (substring ns-str
+                               1
+                               (string-length ns-str)))))
+            (if (or (null? (cddddr dt-l))
+                    (null? (cdr (cddddr dt-l))))
+                ""
+                (second->utc-str (cadr (cddddr dt-l)))))]
+          ['date-time
+           (string-append
+            (dt-l->dt-str
+             (cons 'date (list-head (cdr dt-l) 3)))
+            "T"
+            (dt-l->dt-str
+             (cons 'time (cddddr dt-l))))]))))
+
   (define (string->time-list str)
     (let ([str-l (string-length str)]
           [h #f]
@@ -476,7 +561,7 @@
                       valid-time)
                     (< o-h 24)
                     (< o-m 60)
-                    (set! offset (* 60 (+ (* 24 o-h) o-m)))
+                    (set! offset (* 60 (+ (* 60 o-h) o-m)))
                     (list 'time h m
                           s ns
                           ((if (char=? #\- c) - +)
@@ -564,7 +649,7 @@
   (define (time-list->date t)
     (let ([r-time (reverse (cdr t))]
           [base-date '(1 1 1970)])
-      (cons 'time
+      (cons 'time      
             (apply make-date
                    (if (= (length r-time) 5)
                        (append (cdr r-time)
@@ -970,4 +1055,230 @@
                      cursor
                      new-cursor)
                     (al-toml-set! new-cursor (cdr path) v)))))))
-  )
+  
+  (define (valid-bare-key? str)
+    (let ([valid-key #t])
+      (string-for-each
+       (lambda (c)
+         (unless (char-bare? c)
+           (set! valid-key #f))) str)
+      valid-key))
+  (define (path->str path)
+    (define (path->str-in path new)
+      (if (null? path)
+          new
+          (path->str-in
+           (cdr path)
+           (cons (s->k-str (car path))
+                 (if (null? new)
+                     '()
+                     (cons "." new))))))
+    (apply string-append (path->str-in path '())))
+  (define (s->k-str s)
+    (let ([str (cond
+                [(string? s) s]
+                [(symbol? s) (symbol->string s)]
+                [else
+                 (error s "Writer Error: invalid key")])])
+      (if (valid-bare-key? str)
+          str
+          (format "~s" str))))
+  (define (obj->v-str obj)
+    (cond
+     [(null? obj) "{ }"]
+     [(string? obj) (format "~s" obj)]
+     [(atom? obj)
+      (case obj
+        [+inf.0 "+inf"]
+        [-inf.0 "-inf"]
+        [+nan.0 "nan"]
+        [#t "true"]
+        [#f "false"]
+        [else (number->string obj)])]
+     [else
+      (dt-l->dt-str obj)]))
+  (define (al-toml-dump tree fp)
+    (define (al-dump-subs res-al path)
+      (cond
+       [(null? res-al) 'end]
+       [(integer? (caadar res-al))
+        (al-dump-sub-array (car res-al) path)
+        (al-dump-subs (cdr res-al) path)]
+       [(string? (caadar res-al))
+        (al-dump-sub-table (car res-al) path)
+        (al-dump-subs (cdr res-al) path)]))
+    (define (al-dump res-al path new-al)
+      (cond
+       [(null? res-al)
+        (al-dump-subs (reverse new-al) path)]
+       [(or (atom? (cdar res-al)) ;; including null table
+            (symbol? (cadar res-al)))
+        (al-dump-pair (car res-al))
+        (newline fp)
+        (al-dump (cdr res-al) path new-al)]
+       [(let ([first-key (caadar res-al)])
+          (or (integer? first-key)
+              (string? first-key)))
+        (al-dump (cdr res-al) path
+                 (cons (car res-al) new-al))]
+       [else (error res-al
+                    "Writer Error: invalid assoc list")]))
+
+    (define (al-dump-value v)
+      (cond
+;;       [(null? v) (display "{ }" fp)]
+;;       [(string? v) (display (format "~s" v) fp)]
+       [(or (atom? v)
+            (symbol? (car v)))
+        (display (obj->v-str v) fp)]
+       [(integer? (caar v))
+        (al-dump-inline-array v)]
+       [(string? (caar v))
+        (al-dump-inline-table v)]
+       [else (error v "Writer Error: invalid value")]))
+    (define (al-dump-inline-array array)
+      (display "[ " fp)
+      (let loop ([res-array array])
+        (unless (null? res-array)
+          (al-dump-value (cdar res-array))
+          (unless (null? (cdr res-array))
+            (display ", " fp))
+          (loop (cdr res-array))))
+      (display " ]" fp))
+    (define (al-dump-inline-table al)
+      (display "{ " fp)
+      (let loop ([res-al al])
+        (unless (null? res-al)
+          (al-dump-pair (car al))
+          (unless (null? (cdr res-al))
+            (display ", " fp)))
+        (loop (cdr res-al)))
+      (display " }" fp))
+    (define (al-dump-pair pair)
+      (let ([k (car pair)]
+            [v (cdr pair)])
+        (display (s->k-str k) fp)
+        (display " = " fp)
+        (al-dump-value v)))
+    (define (al-dump-array-head path)
+      (display (format "\n[[~a]]\n" (path->str path)) fp))
+    (define (al-dump-table-head path)
+      (display (format "\n[~a]\n" (path->str path)) fp))
+    (define (al-dump-sub-array array path)
+      (if (andmap (lambda (p)
+                    (or (null? (cdr p))
+                        (and (pair? (cdr p))
+                             (not (symbol? (cadr p)))
+                             (string? (caadr p)))))
+                  (cdr array))
+          (let ([new-path
+                 (cons (car array) path)])
+            (for-each
+             (lambda (al)
+               (al-dump-array-head new-path)
+               (al-dump (cdr al) new-path '()))
+             (cdr array)))
+          (begin
+            (al-dump-pair array)
+            (newline fp))))
+
+    (define (al-dump-sub-table al path)
+      (let ([new-path
+             (cons (car al) path)])
+        (al-dump-table-head new-path)
+        (al-dump (cdr al)
+                 new-path '())))
+    (al-dump (cdr tree) '() '()))
+
+  (define (ht-toml-dump ht fp)
+    (define (ht-dump res-al path new-al)
+      (cond
+       [(null? res-al)
+        (ht-dump-subs (reverse new-al) path)]       
+       [(or (hashtable? (cdar res-al))
+            (vector? (cdar res-al)))
+        (ht-dump (cdr res-al) path
+                 (cons (car res-al) new-al))]
+       [(or (atom? (cdar res-al))
+            (symbol? (cadar res-al)))
+        (ht-dump-pair (car res-al))
+        (newline fp)
+        (ht-dump (cdr res-al) path new-al)]
+       [else (error res-al
+                    "Writer Error: invalid hashtable")]))
+    (define (ht-dump-subs res-al path)
+      (cond
+       [(null? res-al) 'end]
+       [(vector? (cdar res-al))
+        (ht-dump-sub-array (car res-al) path)
+        (ht-dump-subs (cdr res-al) path)]
+       [(hashtable? (cdar res-al))
+        (ht-dump-sub-table (car res-al) path)
+        (ht-dump-subs (cdr res-al) path)]))
+    (define (ht-dump-value v)
+      (cond
+       [(vector? v)
+        (ht-dump-inline-array (vector->list v))]
+       [(hashtable? v)
+        (ht-dump-inline-table
+         (vector->list (hashtable-cells v)))]       
+       [(or (atom? v)
+            (symbol? (car v)))
+        (display (obj->v-str v) fp)]
+       [else (error v "Writer Error: invalid value")]))
+    (define (ht-dump-inline-array array)
+      (display "[ " fp)
+      (let loop ([res-array array])
+        (unless (null? res-array)
+          (ht-dump-value (car res-array))
+          (unless (null? (cdr res-array))
+            (display ", " fp))
+          (loop (cdr res-array))))
+      (display " ]" fp))
+    (define (ht-dump-inline-table al)
+      (display "{ " fp)
+      (let loop ([res-al al])
+        (unless (null? res-al)
+          (ht-dump-pair (car al))
+          (unless (null? (cdr res-al))
+            (display ", " fp)))
+        (loop (cdr res-al)))
+      (display " }" fp))
+    (define (ht-dump-pair pair)
+      (let ([k (car pair)]
+            [v (cdr pair)])
+        (display (s->k-str k) fp)
+        (display " = " fp)
+        (ht-dump-value v)))
+    (define (ht-dump-array-head path)
+      (display (format "\n[[~a]]\n" (path->str path)) fp))
+    (define (ht-dump-table-head path)
+      (display (format "\n[~a]\n" (path->str path)) fp))
+    (define (ht-dump-sub-array arrayp path)
+      (let ([inline #f])
+        (vector-for-each
+         (lambda (item)
+           (unless (hashtable? item)
+             (set! inline #t))) (cdr arrayp))
+        (if inline
+            (begin
+              (ht-dump-pair arrayp)
+              (newline fp))
+            (let ([new-path
+                   (cons (car arrayp) path)])
+              (vector-for-each
+               (lambda (sub-ht)
+                 (ht-dump-array-head new-path)
+                 (ht-dump (vector->list
+                           (hashtable-cells sub-ht))
+                          new-path '()))
+               (cdr arrayp))))))
+    (define (ht-dump-sub-table htp path)
+      (let ([new-path
+             (cons (car htp) path)])
+        (ht-dump-table-head new-path)
+        (ht-dump (vector->list
+                  (hashtable-cells (cdr htp)))
+                 new-path '())))
+    (ht-dump (vector->list
+              (hashtable-cells ht)) '() '())))
