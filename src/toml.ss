@@ -6,7 +6,7 @@
 ;; URL: https://github.com/Yunoinsky/chez-toml
 
 (library (chez-toml (0 1))
-  (export parser tokenizer to-builtin
+  (export toml-load tokenizer to-builtin
           toml-ref toml-set!
           ht-toml-deep-cells toml-display
           toml-dump)
@@ -36,7 +36,7 @@
       [(_ x) (set! x (+ x 1))]
       [(_ x a) (set! x (+ x a))]))
 
-  (define (parser fp)
+  (define (toml-load fp)
     (let ([tk-buffer '()]
           [root (cons 'root '())])
       (define (next)
