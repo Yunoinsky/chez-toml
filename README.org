@@ -87,7 +87,6 @@
       Load toml-data from a text-port, return an assoc list.
     - (toml-display data) ::
       Formatively display loaded toml-data.
-      格式化展示加载好的 toml 数据。
       
     #+begin_src scheme
       (define fp (open-input-file "./test/school.toml"))
