@@ -5,7 +5,7 @@
 ;; version: λ-0.1
 ;; URL: https://github.com/Yunoinsky/chez-toml
 
-(library (chez-toml (0 1))
+(library (toml (0 1))
   (export toml-load tokenizer to-builtin
           toml-ref toml-set!
           ht-toml-deep-cells toml-display
