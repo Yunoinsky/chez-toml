@@ -1,0 +1,20 @@
+# ./test/school.toml
+
+[student]
+[student.LiHua]
+id = "2020010021"
+name = "李华 Li Hua"
+birthday = 1997-05-16
+grade = 2
+
+[[student.LiHua.courses]]
+
+name = "Calculus"
+teacher-id = "200701021"
+score = 3
+
+[[student.LiHua.courses]]
+
+name = "Linear Algebra"
+teacher-id = "201303011"
+score = 4

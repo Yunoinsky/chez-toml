@@ -47,3 +47,85 @@
     2. Copy ~toml.so~ or ~toml.sls~ to this directory.
     3. append ~~/Library/chezscheme/~ to the environment variable ~CHEZSCHEMELIBDIRS~.
     4. Then, we can use ~(import (chez-toml))~ to import this library directly.
+
+** Basic Usage
+
+   Take the following toml file as an example.
+
+   #+begin_src conf
+     # ./test/school.toml
+
+     [student]
+     [student.LiHua]
+     name = "李华 Li Hua"
+     birthday = 1997-05-16
+     grade = 2
+
+     [[student.LiHua.courses]]
+
+     name = "Calculus"
+     teacher-id = "200701021"
+     score = 3
+
+     [[student.LiHua.courses]]
+
+     name = "Linear Algebra"
+     teacher-id = "201303011"
+     score = 4
+   #+end_src
+
+*** load an import library
+   
+    #+begin_src scheme
+      (load "./src/toml.so") ;; this line can be commented 
+                             ;; out if installed globally
+      (import (toml))
+    #+end_src
+    
+*** TOML Reader
+    - (toml-load text-port) ::
+      Load toml-data from a text-port, return an assoc list.
+    - (toml-display data) ::
+      Formatively display loaded toml-data.
+      格式化展示加载好的 toml 数据。
+      
+    #+begin_src scheme
+      (define fp (open-input-file "./test/school.toml"))
+      (define data (toml-load fp))
+      (toml-display data)
+    #+end_src
+
+*** Convert to Chez Scheme built-in types
+    - (to-builtin data) ::
+      Convert assoc list toml-data to built-in types.
+
+    #+begin_src scheme
+      (define data-ht (to-builtin data))
+      (toml-display data-ht)
+    #+end_src
+
+*** Index and assign
+    - (toml-ref data path) ::
+      Index toml-data by key path.
+    - (toml-set! data path value) ::
+      Set tom-data by key path
+      
+    #+begin_src scheme
+      (pretty-print
+       (toml-ref data
+                 '(student LiHua birthday)))
+      (toml-set! data
+                 '(student LiHua grade)
+                 3)
+      (toml-display data)
+    #+end_src
+    
+*** TOML Writer
+    - (toml-dump data text-port) ::
+      Output toml data to text port in TOML format.
+
+    #+begin_src scheme
+      (toml-dump data
+                 (current-output-port))
+    #+end_src
+   

@@ -45,3 +45,82 @@
     2. 将 ~toml.so~ 拷贝到该目录
     3. 将 ~~/Library/chezscheme/~ 添加到环境变量 ~CHEZSCHEMELIBDIRS~ 中
     4. 之后，使用 ~(import (chez-toml))~ 即可直接引入本库
+
+       
+** 基本用法
+
+   以如下 TOML 文件为例子
+
+   #+begin_src conf
+     # ./test/school.toml
+
+     [student]
+     [student.LiHua]
+     name = "李华 Li Hua"
+     birthday = 1997-05-16
+     grade = 2
+
+     [[student.LiHua.courses]]
+
+     name = "Calculus"
+     teacher-id = "200701021"
+     score = 3
+
+     [[student.LiHua.courses]]
+
+     name = "Linear Algebra"
+     teacher-id = "201303011"
+     score = 4
+   #+end_src
+
+*** 加载库
+
+    #+begin_src scheme
+      (load "./src/toml.so") ;; 如已经全局安装，可省略加载
+      (import (toml))
+    #+end_src
+    
+*** 读取 TOML
+    - (toml-load text-port) ::
+      从文本流加载 toml 数据，得到一个关联列表。
+    - (toml-display data) ::
+      格式化展示加载好的 toml 数据。
+      
+    #+begin_src scheme
+      (define fp (open-input-file "./test/school.toml"))
+      (define data (toml-load fp))
+      (toml-display data)
+    #+end_src
+
+*** 转换为内置类型
+    - (to-builtin data) ::
+      将关联列表 toml 数据转化为内置类型。
+    #+begin_src scheme
+      (define data-ht (to-builtin data))
+      (toml-display data-ht)
+    #+end_src
+
+*** 索引与修改
+    - (toml-ref data path) ::
+      索引特定路径的 toml 数据
+    - (toml-set! data path value) ::
+      对 toml 数据特定路径的键值对进行赋值
+      
+    #+begin_src scheme
+      (pretty-print
+       (toml-ref data
+                 '(student LiHua birthday)))
+      (toml-set! data
+                 '(student LiHua grade)
+                 3)
+      (toml-display data)
+    #+end_src
+    
+*** 输出
+    - (toml-dump data text-port) ::
+      将 toml 数据以 TOML 格式输出到文本流
+
+    #+begin_src scheme
+      (toml-dump data
+                 (current-output-port))
+    #+end_src
