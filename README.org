@@ -4,10 +4,12 @@
 
 ** Introduction
 
-TOML in chez-scheme; v1.0.0 compliant ([[https://github.com/toml-lang/toml][TOML v1.0.0 repository]])
+   [[[https://github.com/Yunoinsky/chez-toml/blob/main/README.zh.org][中文版本]]]
+   
+   TOML in chez-scheme; v1.0.0 compliant ([[https://github.com/toml-lang/toml][TOML v1.0.0 repository]])
 
-- [X] Compatible with TOML v1.0.0.
-- [X] Reader: parse TOML text stream into scheme association list.
-- [X] Convert association list to chez builtin object (hash-table, vector and date)
-- [X] Useful API for reference, set and display
-- [X] Writer: parse toml-data in hashtable or alist form into TOML text stream.
+   - Compliant with TOML v1.0.0.
+   - Parser: parse TOML text stream into scheme association list.
+   - Writer: parse toml-data in hashtable or alist form into TOML text stream.
+   - Convert toml association list to chez builtin object (hash-table, vector and date)
+   - Useful API for reference, set and display toml-data

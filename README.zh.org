@@ -4,10 +4,12 @@
 
 ** 简介
 
-chez-scheme 实现的 TOML；适配 v1.0.0 版本 ([[https://github.com/toml-lang/toml][TOML v1.0.0 代码仓库]])
+   [[[https://github.com/Yunoinsky/chez-toml/blob/main/README.org][English Version]]]
+   
+   chez-scheme 实现的 TOML；适配 v1.0.0 版本 ([[https://github.com/toml-lang/toml][TOML v1.0.0 代码仓库]])
 
-- 完全适配 TOML v1.0.0 版本
-- 读取器：将 TOML 文本流解析为 scheme 风格的关联列表
-- 预备了将关联列表转换为 chez 内置的哈希表对象和日期对象的接口
-- 易用的索引、赋值、打印接口
-- 写作器：哈希表对象格式或关联列表格式的 TOML 数据解析为 TOML 文本流
+   - 完全适配 TOML v1.0.0 版本
+   - 读取器：将 TOML 文本流解析为 scheme 风格的关联列表
+   - 预备了将关联列表转换为 chez 内置的哈希表对象和日期对象的接口
+   - 易用的索引、赋值、打印接口
+   - 写作器：哈希表对象格式或关联列表格式的 TOML 数据解析为 TOML 文本流
