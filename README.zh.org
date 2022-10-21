@@ -10,6 +10,38 @@
 
    - 完全适配 TOML v1.0.0 版本
    - 读取器：将 TOML 文本流解析为 scheme 风格的关联列表
+   - 写作器：哈希表对象格式或关联列表格式的 TOML 数据解析为 TOML 文本流
    - 预备了将关联列表转换为 chez 内置的哈希表对象和日期对象的接口
    - 易用的索引、赋值、打印接口
-   - 写作器：哈希表对象格式或关联列表格式的 TOML 数据解析为 TOML 文本流
+
+** 安装
+
+   （注：需要预先安装 [[https://github.com/cisco/ChezScheme][Chez Scheme (v9.5.8)]]。）
+   
+   chez-toml 是一个单文件库，
+   ~./src/toml.sls~ 为源码，
+   ~./src/toml.so~ 为其编译后文件，
+   只要二者之一在路径中，即可使用 chez-toml库。
+
+*** 基础步骤
+
+    可以简单快捷地运行测例：
+    
+    #+begin_src shell
+      
+      git clone https://github.com/Yunoinsky/chez-toml # 克隆仓库
+      cd chez-toml
+      scheme --script ./test/test.ss
+
+    #+end_src
+
+*** 全局安装
+
+    为了在其他项目中使用 chez-toml，
+    我们可以将 ~toml.sls~ 或 ~toml.so~ 拷贝到对应项目中，
+    也可以选择全局安装。下面提供一种全局安装的方式
+
+    1. 创建 ~~/Library/chezscheme/~ 目录
+    2. 将 ~toml.so~ 拷贝到该目录
+    3. 将 ~~/Library/chezscheme/~ 添加到环境变量 ~CHEZSCHEMELIBDIRS~ 中
+    4. 之后，使用 ~(import (chez-toml))~ 即可直接引入本库

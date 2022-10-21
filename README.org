@@ -13,3 +13,37 @@
    - Writer: parse toml-data in hashtable or alist form into TOML text stream.
    - Convert toml association list to chez builtin object (hash-table, vector and date)
    - Useful API for reference, set and display toml-data
+
+** Installation
+
+   ([[https://github.com/cisco/ChezScheme][Chez Scheme (v9.5.8)]] is required)
+
+   chez-toml is a single-file library,
+   ~./src/toml.sls~ is the source code,
+   ~./src/tom.so~ is its compiled file.
+   Each of them is enough to use chez-toml.
+
+*** Basic steps
+
+    By following steps,
+    you can easily run the test case.
+
+    #+begin_src shell
+      
+      git clone https://github.com/Yunoinsky/chez-toml # clone this repository
+      cd chez-toml
+      scheme --script ./test/test.ss
+
+    #+end_src
+
+*** Global installation
+    By copying ~toml.sls~ or ~toml.so~
+    to the corresponding project, we can
+    use chez-toml in other projects.
+    You can also choose to install it globally.
+    Here is one way to do this.
+
+    1. Create lib directory: ~~/Library/chezscheme/~.
+    2. Copy ~toml.so~ or ~toml.sls~ to this directory.
+    3. append ~~/Library/chezscheme/~ to the environment variable ~CHEZSCHEMELIBDIRS~.
+    4. Then, we can use ~(import (chez-toml))~ to import this library directly.
