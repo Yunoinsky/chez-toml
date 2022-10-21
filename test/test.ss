@@ -1,10 +1,10 @@
 (load-library "./src/toml.so")
-(import (chez-toml))
+(import (toml))
 
 (define fp '())
 
 (define (test-file-input-port)
-  (set! fp (open-input-file "./test/example_1.toml")))
+  (set! fp (open-input-file "./test/test_example.toml")))
 
 (define (colorful-print s)
   (display (format "\n\n[35m[TEST] [1;32m~a[0m\n\n" s)))
