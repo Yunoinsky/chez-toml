@@ -20,11 +20,6 @@
     (syntax-rules ()
       [(_ pair item) (set-cdr! pair (cons item (cdr pair)))]))
 
-  (define-syntax reverse-cdr!
-    (syntax-rules ()
-      [(_ list-pair)
-       (set-cdr! list-pair (reverse (cdr list-pair)))]))
-
   (define-syntax pop!
     (syntax-rules ()
       [(_ rl) (let ([a (car rl)])
@@ -1126,8 +1121,6 @@
 
     (define (al-dump-value v)
       (cond
-;;       [(null? v) (display "{ }" fp)]
-;;       [(string? v) (display (format "~s" v) fp)]
        [(or (atom? v)
             (symbol? (car v)))
         (display (obj->v-str v) fp)]
