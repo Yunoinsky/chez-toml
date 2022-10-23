@@ -20,7 +20,7 @@
 
    chez-toml is a single-file library,
    ~./src/toml.sls~ is the source code,
-   ~./src/tom.so~ is its compiled file.
+   ~./src/toml.so~ is its compiled file.
    Each of them is enough to use chez-toml.
 
 *** Basic steps
@@ -46,7 +46,7 @@
     1. Create lib directory: ~~/Library/chezscheme/~.
     2. Copy ~toml.so~ or ~toml.sls~ to this directory.
     3. append ~~/Library/chezscheme/~ to the environment variable ~CHEZSCHEMELIBDIRS~.
-    4. Then, we can use ~(import (chez-toml))~ to import this library directly.
+    4. Then, we can use ~(import (toml))~ to import this library directly.
 
 ** Basic Usage
 
