@@ -52,7 +52,7 @@
 
    Take the following toml file as an example.
 
-   #+begin_src conf
+   #+begin_src toml
      # ./test/school.toml
 
      [student]

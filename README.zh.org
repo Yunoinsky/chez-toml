@@ -51,7 +51,7 @@
 
    以如下 TOML 文件为例子
 
-   #+begin_src conf
+   #+begin_src toml
      # ./test/school.toml
 
      [student]
