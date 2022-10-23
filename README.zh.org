@@ -21,7 +21,7 @@
    chez-toml 是一个单文件库，
    ~./src/toml.sls~ 为源码，
    ~./src/toml.so~ 为其编译后文件，
-   只要二者之一在路径中，即可使用 chez-toml库。
+   只要二者之一在路径中，即可使用 chez-toml 库。
 
 *** 基础步骤
 

@@ -74,7 +74,7 @@
      score = 4
    #+end_src
 
-*** load an import library
+*** Load and import library
    
     #+begin_src scheme
       (load "./src/toml.so") ;; this line can be commented 
